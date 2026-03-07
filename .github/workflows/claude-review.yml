@@ -22,6 +22,9 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          # Unset to avoid "nested session" error on self-hosted runner
+          unset CLAUDECODE
+
           # Get the diff for this PR
           git diff origin/main...HEAD > /tmp/pr-diff.txt
 
