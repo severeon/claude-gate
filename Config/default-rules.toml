@@ -1,21 +1,66 @@
 # claude-gate default rules
-# Rules are evaluated top-to-bottom, first match wins.
-# Actions: passthrough (allow), gate (require auth), deny (hard block)
+# Rules are evaluated top-to-bottom, first match wins (like firewall rules).
+# Actions: passthrough (allow silently), gate (require auth), deny (hard block)
+# Risk levels: critical, high, medium, low (affects UI color in gate window)
 
 [defaults]
 action = "passthrough"
 
-# --- Hard blocks ---
+# ============================================================================
+# HARD BLOCKS — These commands are never allowed
+# ============================================================================
 
 [[rules]]
-name = "Hard block: system destruction"
+name = "Block: recursive delete of system/home paths"
 tool = "Bash"
-pattern = '(rm\s+-rf\s+[/~]|mkfs|dd\s+if=|:\(\)\s*\{)'
+pattern = 'rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+|(-[a-zA-Z]*\s+)*)[/~]'
 action = "deny"
-reason = "This command could destroy system-level files or devices."
+reason = "This command would recursively delete system-level or home directory files."
 risk = "critical"
 
-# --- Gated commands ---
+[[rules]]
+name = "Block: disk formatting"
+tool = "Bash"
+pattern = '(mkfs\.|newfs\s|diskutil\s+eraseDisk|diskutil\s+partitionDisk)'
+action = "deny"
+reason = "This command would format or repartition a disk."
+risk = "critical"
+
+[[rules]]
+name = "Block: raw disk write"
+tool = "Bash"
+pattern = 'dd\s+.*if=.*of=/dev/'
+action = "deny"
+reason = "This command writes raw data directly to a disk device."
+risk = "critical"
+
+[[rules]]
+name = "Block: fork bomb"
+tool = "Bash"
+pattern = ':\(\)\s*\{'
+action = "deny"
+reason = "This is a fork bomb that will crash the system."
+risk = "critical"
+
+[[rules]]
+name = "Block: chmod 777 on system paths"
+tool = "Bash"
+pattern = 'chmod\s+(-[a-zA-Z]*\s+)*777\s+[/~]'
+action = "deny"
+reason = "Setting 777 permissions on system paths is a critical security vulnerability."
+risk = "critical"
+
+[[rules]]
+name = "Block: disable system integrity protection"
+tool = "Bash"
+pattern = 'csrutil\s+disable'
+action = "deny"
+reason = "Disabling System Integrity Protection removes critical macOS security protections."
+risk = "critical"
+
+# ============================================================================
+# GATED: Git operations that affect shared state
+# ============================================================================
 
 [[rules]]
 name = "Gate: force push"
@@ -26,33 +71,385 @@ reason = "Force-pushing rewrites remote history. Other contributors' work may be
 risk = "high"
 
 [[rules]]
-name = "Gate: package install"
+name = "Gate: push to main/master"
 tool = "Bash"
-pattern = '(npm install|pip install|cargo install|brew install)'
+pattern = 'git\s+push\s+\S+\s+(main|master)\b'
 action = "gate"
-reason = "Installing packages modifies your system environment and pulls third-party code."
-risk = "medium"
-
-[[rules]]
-name = "Gate: env/secrets access"
-tool = "Bash"
-pattern = '(\.env|secrets|credentials|password|api.?key)'
-action = "gate"
-reason = "This command may read or expose sensitive credentials."
+reason = "Pushing directly to main/master bypasses code review."
 risk = "high"
 
 [[rules]]
-name = "Gate: writes to home directory dotfiles"
+name = "Gate: hard reset"
+tool = "Bash"
+pattern = 'git\s+reset\s+--hard'
+action = "gate"
+reason = "Hard reset discards all uncommitted changes permanently."
+risk = "high"
+
+[[rules]]
+name = "Gate: branch deletion"
+tool = "Bash"
+pattern = 'git\s+branch\s+(-[dD]|--delete)'
+action = "gate"
+reason = "Deleting a branch may lose unmerged work."
+risk = "medium"
+
+[[rules]]
+name = "Gate: git clean"
+tool = "Bash"
+pattern = 'git\s+clean\s+.*-f'
+action = "gate"
+reason = "git clean -f permanently removes untracked files."
+risk = "high"
+
+[[rules]]
+name = "Gate: rebase"
+tool = "Bash"
+pattern = 'git\s+rebase'
+action = "gate"
+reason = "Rebasing rewrites commit history. This can cause issues if commits are already pushed."
+risk = "medium"
+
+[[rules]]
+name = "Gate: amend commit"
+tool = "Bash"
+pattern = 'git\s+commit\s+.*--amend'
+action = "gate"
+reason = "Amending a commit rewrites the previous commit. If already pushed, this requires a force push."
+risk = "medium"
+
+# ============================================================================
+# GATED: Package management — pulling third-party code
+# ============================================================================
+
+[[rules]]
+name = "Gate: npm/yarn/pnpm/bun install"
+tool = "Bash"
+pattern = '(npm|yarn|pnpm|bun)\s+(install|add|i\b)'
+action = "gate"
+reason = "Installing packages pulls third-party code into your project."
+risk = "medium"
+
+[[rules]]
+name = "Gate: pip install"
+tool = "Bash"
+pattern = 'pip3?\s+install'
+action = "gate"
+reason = "Installing Python packages pulls third-party code and may run setup scripts."
+risk = "medium"
+
+[[rules]]
+name = "Gate: cargo install/add"
+tool = "Bash"
+pattern = 'cargo\s+(install|add)'
+action = "gate"
+reason = "Installing Rust packages compiles and runs build scripts from third-party sources."
+risk = "medium"
+
+[[rules]]
+name = "Gate: brew install"
+tool = "Bash"
+pattern = 'brew\s+(install|cask\s+install)'
+action = "gate"
+reason = "Installing Homebrew packages modifies your system environment."
+risk = "medium"
+
+[[rules]]
+name = "Gate: gem install"
+tool = "Bash"
+pattern = 'gem\s+install'
+action = "gate"
+reason = "Installing Ruby gems pulls third-party code."
+risk = "medium"
+
+[[rules]]
+name = "Gate: go install"
+tool = "Bash"
+pattern = 'go\s+install'
+action = "gate"
+reason = "Installing Go packages downloads and compiles third-party code."
+risk = "medium"
+
+[[rules]]
+name = "Gate: apt/dnf/pacman install"
+tool = "Bash"
+pattern = '(apt(-get)?|dnf|yum|pacman)\s+(-\S+\s+)*install'
+action = "gate"
+reason = "Installing system packages modifies the OS environment."
+risk = "medium"
+
+# ============================================================================
+# GATED: Credentials, secrets, and sensitive data
+# ============================================================================
+
+[[rules]]
+name = "Gate: access .env files"
+tool = "Bash"
+pattern = '\.env\b'
+action = "gate"
+reason = "This command may read or expose environment secrets."
+risk = "high"
+
+[[rules]]
+name = "Gate: access credentials/secrets"
+tool = "Bash"
+pattern = '(credentials|secrets?|password|passwd|api[_-]?key|private[_-]?key|token|auth[_-]?token)'
+action = "gate"
+reason = "This command may access sensitive credentials or authentication tokens."
+risk = "high"
+
+[[rules]]
+name = "Gate: keychain access"
+tool = "Bash"
+pattern = '(security\s+(find|add|delete)-.*password|keychain)'
+action = "gate"
+reason = "This command accesses the macOS Keychain."
+risk = "high"
+
+[[rules]]
+name = "Gate: read SSH keys"
+tool = "Bash"
+pattern = 'cat\s+.*\.ssh/(id_|authorized_keys|known_hosts)'
+action = "gate"
+reason = "This command reads SSH keys or configuration."
+risk = "high"
+
+# ============================================================================
+# GATED: Network operations
+# ============================================================================
+
+[[rules]]
+name = "Gate: HTTP requests"
+tool = "Bash"
+pattern = '(curl|wget|http|https)\s'
+action = "gate"
+reason = "This command makes an outbound network request."
+risk = "medium"
+
+[[rules]]
+name = "Gate: SSH connections"
+tool = "Bash"
+pattern = 'ssh\s+[^-]'
+action = "gate"
+reason = "This command opens an SSH connection to a remote host."
+risk = "medium"
+
+[[rules]]
+name = "Gate: netcat/socat"
+tool = "Bash"
+pattern = '(nc|ncat|netcat|socat)\s'
+action = "gate"
+reason = "This command opens a raw network connection."
+risk = "high"
+
+[[rules]]
+name = "Gate: SCP/rsync transfers"
+tool = "Bash"
+pattern = '(scp|rsync)\s+.*:'
+action = "gate"
+reason = "This command transfers files to/from a remote host."
+risk = "medium"
+
+# ============================================================================
+# GATED: System and process management
+# ============================================================================
+
+[[rules]]
+name = "Gate: sudo commands"
+tool = "Bash"
+pattern = 'sudo\s'
+action = "gate"
+reason = "This command runs with elevated root privileges."
+risk = "high"
+
+[[rules]]
+name = "Gate: kill processes"
+tool = "Bash"
+pattern = '(kill|killall|pkill)\s'
+action = "gate"
+reason = "This command terminates running processes."
+risk = "medium"
+
+[[rules]]
+name = "Gate: cron/launchctl modification"
+tool = "Bash"
+pattern = '(crontab|launchctl\s+(load|unload|submit|bootstrap))'
+action = "gate"
+reason = "This command modifies scheduled tasks or system services."
+risk = "high"
+
+[[rules]]
+name = "Gate: system defaults modification"
+tool = "Bash"
+pattern = 'defaults\s+write'
+action = "gate"
+reason = "This command modifies macOS system or application preferences."
+risk = "medium"
+
+# ============================================================================
+# GATED: Docker and container operations
+# ============================================================================
+
+[[rules]]
+name = "Gate: docker rm/prune"
+tool = "Bash"
+pattern = 'docker\s+(rm|rmi|container\s+rm|image\s+rm|system\s+prune|volume\s+rm)'
+action = "gate"
+reason = "This command removes Docker containers, images, or volumes."
+risk = "medium"
+
+[[rules]]
+name = "Gate: docker run with privileged/host"
+tool = "Bash"
+pattern = 'docker\s+run\s+.*(--privileged|--net\s*=?\s*host|--pid\s*=?\s*host|-v\s+/:/)'
+action = "gate"
+reason = "This Docker command uses privileged mode or mounts the host filesystem."
+risk = "high"
+
+# ============================================================================
+# GATED: Database operations
+# ============================================================================
+
+[[rules]]
+name = "Gate: database destructive commands"
+tool = "Bash"
+pattern = '(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE|DELETE\s+FROM\s+\S+\s*;)'
+action = "gate"
+reason = "This command performs a destructive database operation."
+risk = "high"
+
+[[rules]]
+name = "Gate: database migration"
+tool = "Bash"
+pattern = '(migrate|migration|knex\s+migrate|prisma\s+(migrate|db\s+push)|alembic|flyway|rails\s+db:migrate)'
+action = "gate"
+reason = "Database migrations modify schema and can be difficult to reverse."
+risk = "medium"
+
+# ============================================================================
+# GATED: File system — dotfiles and config
+# ============================================================================
+
+[[rules]]
+name = "Gate: write to shell dotfiles"
 tool = "Write"
-path_pattern = '^\.(bash|zsh|ssh|gnupg|config)'
+path_pattern = '(^|/)\.(bash|zsh|profile|login|logout)'
 action = "gate"
-reason = "Modifying dotfiles changes your shell environment and security configuration."
+reason = "Modifying shell dotfiles changes your shell environment on every new session."
 risk = "high"
 
 [[rules]]
-name = "Gate: network requests"
-tool = "Bash"
-pattern = '(curl|wget|nc\s|ncat|ssh\s)'
+name = "Gate: write to SSH config"
+tool = "Write"
+path_pattern = '(^|/)\.ssh/'
 action = "gate"
-reason = "This command initiates a network connection."
+reason = "Modifying SSH configuration affects secure remote connections."
+risk = "high"
+
+[[rules]]
+name = "Gate: write to git config"
+tool = "Write"
+path_pattern = '(^|/)\.gitconfig$'
+action = "gate"
+reason = "Modifying global git config affects all repositories."
 risk = "medium"
+
+[[rules]]
+name = "Gate: write to GPG/PGP files"
+tool = "Write"
+path_pattern = '(^|/)\.gnupg/'
+action = "gate"
+reason = "Modifying GPG configuration affects cryptographic signing and encryption."
+risk = "high"
+
+[[rules]]
+name = "Gate: write to .config directory"
+tool = "Write"
+path_pattern = '(^|/)\.config/'
+action = "gate"
+reason = "Modifying application configuration in .config may affect system behavior."
+risk = "medium"
+
+[[rules]]
+name = "Gate: edit shell dotfiles"
+tool = "Edit"
+path_pattern = '(^|/)\.(bash|zsh|profile|login|logout)'
+action = "gate"
+reason = "Modifying shell dotfiles changes your shell environment on every new session."
+risk = "high"
+
+[[rules]]
+name = "Gate: edit SSH config"
+tool = "Edit"
+path_pattern = '(^|/)\.ssh/'
+action = "gate"
+reason = "Modifying SSH configuration affects secure remote connections."
+risk = "high"
+
+# ============================================================================
+# GATED: CI/CD and deployment
+# ============================================================================
+
+[[rules]]
+name = "Gate: modify CI/CD pipelines"
+tool = "Write"
+path_pattern = '(\.github/workflows/|\.gitlab-ci|Jenkinsfile|\.circleci/|\.travis\.yml|\.buildkite/)'
+action = "gate"
+reason = "Modifying CI/CD configuration affects automated build and deployment pipelines."
+risk = "high"
+
+[[rules]]
+name = "Gate: edit CI/CD pipelines"
+tool = "Edit"
+path_pattern = '(\.github/workflows/|\.gitlab-ci|Jenkinsfile|\.circleci/|\.travis\.yml|\.buildkite/)'
+action = "gate"
+reason = "Modifying CI/CD configuration affects automated build and deployment pipelines."
+risk = "high"
+
+[[rules]]
+name = "Gate: deployment commands"
+tool = "Bash"
+pattern = '(deploy|terraform\s+(apply|destroy)|kubectl\s+(apply|delete|scale)|helm\s+(install|upgrade|delete))'
+action = "gate"
+reason = "This command deploys or modifies infrastructure/services."
+risk = "high"
+
+# ============================================================================
+# GATED: Script execution — running arbitrary code
+# ============================================================================
+
+[[rules]]
+name = "Gate: execute downloaded scripts"
+tool = "Bash"
+pattern = '(curl|wget)\s+.*\|\s*(bash|sh|zsh)'
+action = "gate"
+reason = "Piping a downloaded script directly into a shell runs unreviewed code."
+risk = "high"
+
+[[rules]]
+name = "Gate: eval/exec of strings"
+tool = "Bash"
+pattern = '\b(eval|exec)\s+'
+action = "gate"
+reason = "eval/exec runs dynamically constructed commands, which can be unpredictable."
+risk = "medium"
+
+# ============================================================================
+# GATED: Sensitive file types
+# ============================================================================
+
+[[rules]]
+name = "Gate: write to Dockerfile"
+tool = "Write"
+path_pattern = '(^|/)Dockerfile'
+action = "gate"
+reason = "Modifying a Dockerfile changes the container build process."
+risk = "medium"
+
+[[rules]]
+name = "Gate: write to Makefile"
+tool = "Write"
+path_pattern = '(^|/)Makefile$'
+action = "gate"
+reason = "Modifying a Makefile changes build automation commands."
+risk = "low"

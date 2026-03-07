@@ -1,22 +1,35 @@
 import Foundation
 
-struct OutputDecision: Codable {
-    let decision: String
-    let reason: String
+struct HookOutput: Codable {
+    let hookSpecificOutput: HookSpecificOutput
 
-    static func approve(reason: String = "No matching rule") -> OutputDecision {
-        OutputDecision(decision: "approve", reason: reason)
+    struct HookSpecificOutput: Codable {
+        let hookEventName: String
+        let permissionDecision: String
+        let permissionDecisionReason: String?
     }
 
-    static func deny(reason: String) -> OutputDecision {
-        OutputDecision(decision: "deny", reason: reason)
+    static func allow(reason: String? = nil) -> HookOutput {
+        HookOutput(hookSpecificOutput: HookSpecificOutput(
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            permissionDecisionReason: reason
+        ))
+    }
+
+    static func deny(reason: String) -> HookOutput {
+        HookOutput(hookSpecificOutput: HookSpecificOutput(
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+        ))
     }
 
     func toJSON() -> String {
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(self),
               let str = String(data: data, encoding: .utf8) else {
-            return "{\"decision\": \"deny\", \"reason\": \"Failed to encode decision\"}"
+            return "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Failed to encode decision\"}}"
         }
         return str
     }

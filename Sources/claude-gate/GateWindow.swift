@@ -8,9 +8,9 @@ class GateWindow: NSObject, NSWindowDelegate {
     private let errorLabel: NSTextField
     private var resolved = false
 
-    init(ruleName: String, riskLevel: String, reason: String, commandText: String, workingDirectory: String) {
+    init(ruleName: String, riskLevel: String, reason: String, commandText: String, workingDirectory: String, justification: String? = nil) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 440),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -58,6 +58,19 @@ class GateWindow: NSObject, NSWindowDelegate {
 
         let reasonLabel = NSTextField(wrappingLabelWithString: reason)
         reasonLabel.font = NSFont.systemFont(ofSize: 13)
+
+        // AGENT JUSTIFICATION section (if provided)
+        var justificationViews: [NSView] = []
+        if let justification = justification, !justification.isEmpty {
+            let justHeader = NSTextField(labelWithString: "AGENT JUSTIFICATION:")
+            justHeader.font = NSFont.boldSystemFont(ofSize: 13)
+
+            let justLabel = NSTextField(wrappingLabelWithString: justification)
+            justLabel.font = NSFont.systemFont(ofSize: 13)
+            justLabel.textColor = .secondaryLabelColor
+
+            justificationViews = [justHeader, justLabel]
+        }
 
         // COMMAND section
         let commandHeader = NSTextField(labelWithString: "COMMAND:")
@@ -117,6 +130,9 @@ class GateWindow: NSObject, NSWindowDelegate {
         stackView.addArrangedSubview(separator)
         stackView.addArrangedSubview(whyHeader)
         stackView.addArrangedSubview(reasonLabel)
+        for view in justificationViews {
+            stackView.addArrangedSubview(view)
+        }
         stackView.addArrangedSubview(commandHeader)
         stackView.addArrangedSubview(scrollView)
         stackView.addArrangedSubview(cwdHeader)
@@ -146,6 +162,15 @@ class GateWindow: NSObject, NSWindowDelegate {
 
             buttonBar.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -20),
         ])
+
+        // Constrain justification label width if present
+        for view in justificationViews {
+            if view is NSTextField, view != justificationViews.first {
+                NSLayoutConstraint.activate([
+                    view.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+                ])
+            }
+        }
 
         super.init()
 

@@ -25,6 +25,11 @@ struct HookInput: Codable {
         toolInput["file_path"]?.stringValue
     }
 
+    /// Claude's description of what the command does (Bash tool_input.description)
+    var toolDescription: String? {
+        toolInput["description"]?.stringValue
+    }
+
     var toolInputAsString: String {
         if let data = try? JSONEncoder().encode(toolInput),
            let str = String(data: data, encoding: .utf8) {

@@ -2,33 +2,34 @@
 
 Biometric permission gating for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Think `sudo` for AI — but with contextual explanations and Touch ID.
 
-claude-gate intercepts Claude Code tool calls before execution, matches them against configurable rules, and gates dangerous ones behind Touch ID or password authentication.
+claude-gate intercepts Claude Code tool calls before execution, matches them against configurable rules, and gates dangerous ones behind Touch ID or password authentication. When a gated command is intercepted, it shows Claude's own justification for the tool use alongside the risk explanation.
 
-```
-Claude Code: "I'll run rm -rf /tmp/build"
-        |
-   claude-gate evaluates rules
-        |
-   Rule matched: "Gate: destructive command"
-        |
-   +------------------------------------------+
-   | claude-gate: Authorization Required       |
-   |                                           |
-   | Rule: Gate: destructive command            |
-   | Risk: HIGH                                 |
-   |                                           |
-   | WHY:                                       |
-   | This command could remove important files. |
-   |                                           |
-   | COMMAND:                                   |
-   | rm -rf /tmp/build                          |
-   |                                           |
-   |        [ Cancel ]   [ Authenticate ]       |
-   +------------------------------------------+
-        |
-   Touch ID / Password prompt
-        |
-   Approved → Claude Code continues
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant CG as claude-gate
+    participant W as Gate Window
+    participant TID as Touch ID
+
+    CC->>CG: PreToolUse hook (stdin JSON)
+    CG->>CG: Evaluate rules
+    alt No match
+        CG->>CC: allow (passthrough)
+    else Deny rule
+        CG->>CC: deny (hard block)
+    else Gate rule
+        CG->>W: Show authorization window
+        Note over W: Rule name, risk level,<br/>reason, agent justification,<br/>exact command, working directory
+        W->>TID: User clicks Authenticate
+        alt Success
+            TID->>W: Authenticated
+            W->>CG: Approved
+            CG->>CC: allow
+        else Cancel / Fail
+            W->>CG: Denied
+            CG->>CC: deny
+        end
+    end
 ```
 
 ## Install
@@ -73,8 +74,36 @@ claude-gate runs as a [Claude Code PreToolUse hook](https://docs.anthropic.com/e
 | Action | What happens |
 |--------|-------------|
 | **passthrough** | Silently approved. Claude Code continues. |
-| **gate** | Native macOS window appears with explanation. Requires Touch ID or password to proceed. |
-| **deny** | Hard block. Claude Code is told the action was denied. |
+| **gate** | Native macOS window appears showing the rule reason, Claude's justification for the tool use, and the exact command. Requires Touch ID or password to proceed. |
+| **deny** | Hard block. Claude Code is told the action was denied with the rule's reason. |
+
+## The Gate Window
+
+When a rule triggers a `gate` action, a native macOS window appears:
+
+```mermaid
+block-beta
+    columns 1
+    block:window["claude-gate: Authorization Required"]
+        columns 1
+        A["Gate: force push"]
+        B["Risk: HIGH"]
+        C["---"]
+        D["WHY:\nForce-pushing rewrites remote history.\nOther contributors' work may be lost."]
+        E["AGENT JUSTIFICATION:\nPushing the rebased feature branch to update the PR"]
+        F["COMMAND:\ngit push --force origin feature-branch"]
+        G["WORKING DIRECTORY:\n/Users/you/projects/my-app"]
+        H["[ Cancel ]  [ Authenticate ]"]
+    end
+
+    style A fill:#333,color:#fff
+    style B fill:#333,color:#f90
+    style D fill:#2a2a2a,color:#ccc
+    style E fill:#2a2a2a,color:#999
+    style F fill:#1e1e1e,color:#fff,font-family:monospace
+```
+
+The **Agent Justification** field shows Claude's own `description` of why it's using the tool, giving you context for your decision.
 
 ## Rules
 
@@ -85,11 +114,11 @@ Rules live in `~/.config/claude-gate/rules.toml`. They're evaluated top-to-botto
 action = "passthrough"  # what to do when no rule matches
 
 [[rules]]
-name = "Hard block: system destruction"
+name = "Block: recursive delete of system paths"
 tool = "Bash"
-pattern = '(rm\s+-rf\s+[/~]|mkfs|dd\s+if=)'
+pattern = 'rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+|(-[a-zA-Z]*\s+)*)[/~]'
 action = "deny"
-reason = "This command could destroy system-level files or devices."
+reason = "This command would recursively delete system-level files."
 risk = "critical"
 
 [[rules]]
@@ -103,7 +132,7 @@ risk = "high"
 [[rules]]
 name = "Gate: package install"
 tool = "Bash"
-pattern = '(npm install|pip install|cargo install|brew install)'
+pattern = '(npm|yarn|pnpm|bun)\s+(install|add|i\b)'
 action = "gate"
 reason = "Installing packages pulls third-party code."
 risk = "medium"
@@ -123,37 +152,62 @@ risk = "medium"
 
 ### Default rules
 
-The shipped defaults cover:
-- **Deny:** `rm -rf /`, `mkfs`, `dd if=`, fork bombs
-- **Gate:** force push, package installs, secrets/env access, dotfile modifications, network requests (curl, wget, ssh)
-- **Passthrough:** everything else
+The shipped defaults are comprehensive, covering 50+ rules across these categories:
+
+| Category | Action | Examples |
+|----------|--------|----------|
+| System destruction | deny | `rm -rf /`, `mkfs`, `dd if=`, fork bombs, `chmod 777 /` |
+| Git shared state | gate | force push, push to main, hard reset, rebase, branch delete |
+| Package management | gate | npm/yarn/pip/cargo/brew/gem/go/apt install |
+| Credentials & secrets | gate | `.env` access, API keys, SSH keys, keychain |
+| Network operations | gate | curl, wget, ssh, scp, netcat |
+| System management | gate | sudo, kill, crontab, launchctl |
+| Docker operations | gate | `docker rm`, privileged containers |
+| Database operations | gate | DROP TABLE, migrations |
+| Dotfiles & config | gate | `.bashrc`, `.ssh/config`, `.gitconfig` |
+| CI/CD pipelines | gate | GitHub Actions, Jenkinsfile, deploy commands |
+| Script execution | gate | `curl \| bash`, eval |
 
 ## Authentication
 
-claude-gate uses macOS `LocalAuthentication` framework with the `.deviceOwnerAuthentication` policy. This means:
+claude-gate uses macOS `LocalAuthentication` framework with the `.deviceOwnerAuthentication` policy:
 
-1. **Touch ID** is tried first
-2. **System password** is the automatic fallback (works on Macs without Touch ID)
-3. **3 retries** before auto-deny
-4. **60-second timeout** to prevent hanging Claude Code sessions
+```mermaid
+flowchart LR
+    A[Authenticate\nbutton clicked] --> B{Touch ID\navailable?}
+    B -->|Yes| C[Touch ID prompt]
+    B -->|No| D[System password]
+    C -->|Success| E[Approved]
+    C -->|Fail| F{Retries\nremaining?}
+    D -->|Success| E
+    D -->|Fail| F
+    F -->|Yes| C
+    F -->|No| G[Denied]
+    H[60s timeout] --> G
+```
+
+- **Touch ID** is tried first
+- **System password** is the automatic fallback (works on Macs without Touch ID)
+- **3 retries** before auto-deny
+- **60-second timeout** to prevent hanging Claude Code sessions
 
 ## Architecture
 
-```
-Claude Code PreToolUse hook
-        |
-        v
-   claude-gate (Swift CLI)
-        |
-        +-- Read stdin JSON from Claude Code
-        +-- Load rules from ~/.config/claude-gate/rules.toml
-        +-- Evaluate: first matching rule wins
-        |
-        +-- passthrough → exit 0, stdout: {"decision":"approve"}
-        +-- deny → exit 2, stdout: {"decision":"deny"}
-        +-- gate → show NSWindow, require auth
-                +-- auth success → exit 0, approve
-                +-- auth fail/cancel → exit 2, deny
+```mermaid
+flowchart TD
+    CC[Claude Code] -->|PreToolUse hook\nstdin JSON| CG[claude-gate CLI]
+    CG --> PARSE[Parse stdin JSON]
+    PARSE --> RULES[Load rules.toml]
+    RULES --> EVAL[Evaluate rules\nfirst match wins]
+    EVAL -->|passthrough| ALLOW[exit 0\npermissionDecision: allow]
+    EVAL -->|deny| DENY[exit 0\npermissionDecision: deny]
+    EVAL -->|gate| WINDOW[Show NSWindow]
+    WINDOW -->|Cancel| DENY
+    WINDOW -->|Authenticate| AUTH[Touch ID / Password]
+    AUTH -->|Success| ALLOW
+    AUTH -->|Failure| WINDOW
+    ALLOW --> CC
+    DENY --> CC
 ```
 
 Built with:
@@ -161,6 +215,7 @@ Built with:
 - **AppKit** — native window, no Electron
 - **LocalAuthentication** — Touch ID + password
 - **TOMLKit** — TOML config parsing
+- Uses the correct `hookSpecificOutput` format with `permissionDecision` for Claude Code hook integration
 
 ## License
 
