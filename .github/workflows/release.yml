@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: self-hosted
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build release binary
+        run: |
+          swift build --configuration release 2>&1
+          echo "Binary size: $(du -h .build/release/claude-gate | cut -f1)"
+
+      - name: Run tests
+        run: |
+          # Build debug for tests
+          swift build 2>&1
+
+          mkdir -p ~/.config/claude-gate
+          cp Config/default-rules.toml ~/.config/claude-gate/rules.toml
+
+          BINARY=".build/debug/claude-gate"
+
+          echo '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | $BINARY 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['hookSpecificOutput']['permissionDecision'] == 'allow'"
+          echo "PASS: passthrough"
+
+          echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | $BINARY 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['hookSpecificOutput']['permissionDecision'] == 'deny'"
+          echo "PASS: deny"
+
+          RESULT=$(echo 'bad json' | $BINARY 2>/dev/null || true)
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['hookSpecificOutput']['permissionDecision'] == 'deny'"
+          echo "PASS: fail-closed"
+
+          echo "All tests passed"
+
+      - name: Package release
+        run: |
+          mkdir -p dist
+          cp .build/release/claude-gate dist/
+          cp Config/default-rules.toml dist/
+          cp install.sh dist/
+          cp README.md dist/
+          cp LICENSE dist/
+
+          cd dist
+          tar czf ../claude-gate-${{ steps.version.outputs.VERSION }}-macos-arm64.tar.gz *
+          cd ..
+
+          # Also create a standalone binary
+          cp .build/release/claude-gate claude-gate-${{ steps.version.outputs.VERSION }}-macos-arm64
+
+          echo "## Checksums" > checksums.txt
+          shasum -a 256 claude-gate-${{ steps.version.outputs.VERSION }}-macos-arm64.tar.gz >> checksums.txt
+          shasum -a 256 claude-gate-${{ steps.version.outputs.VERSION }}-macos-arm64 >> checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+
+          gh release create "$VERSION" \
+            --title "claude-gate $VERSION" \
+            --notes "$(cat <<'EOF'
+          ## Install
+
+          ### Quick install (download binary)
+          ```bash
+          # Download the binary
+          curl -L https://github.com/severeon/claude-gate/releases/download/$VERSION/claude-gate-$VERSION-macos-arm64 -o /usr/local/bin/claude-gate
+          chmod +x /usr/local/bin/claude-gate
+
+          # Download and seed default rules
+          curl -L https://github.com/severeon/claude-gate/releases/download/$VERSION/claude-gate-$VERSION-macos-arm64.tar.gz | tar xz -C /tmp default-rules.toml
+          mkdir -p ~/.config/claude-gate
+          cp /tmp/default-rules.toml ~/.config/claude-gate/rules.toml
+          ```
+
+          ### Build from source
+          ```bash
+          git clone https://github.com/severeon/claude-gate.git
+          cd claude-gate
+          ./install.sh
+          ```
+
+          ### Add hook to Claude Code
+          Add to `~/.claude/settings.json`:
+          ```json
+          {
+            "hooks": {
+              "PreToolUse": [{
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": "/usr/local/bin/claude-gate"}]
+              }]
+            }
+          }
+          ```
+
+          See [README](https://github.com/severeon/claude-gate#readme) for full documentation.
+          EOF
+          )" \
+            claude-gate-${VERSION}-macos-arm64.tar.gz \
+            claude-gate-${VERSION}-macos-arm64
