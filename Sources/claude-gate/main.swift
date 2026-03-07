@@ -127,14 +127,26 @@ case .gate:
     }
 
     gateWindow.onCancel = {
-        FileHandle.standardError.write(Data("claude-gate: Authentication cancelled\n".utf8))
-        respond(output: .deny(reason: "Authentication cancelled"), exitCode: 2)
+        respond(output: .deny(reason: "Authentication cancelled"), exitCode: 0)
+    }
+
+    // Kick off security audit in background (non-blocking)
+    SecurityAudit.run(input: input, ruleName: rule.name, ruleReason: rule.reason) { result in
+        if let result = result {
+            gateWindow.showAuditResult(verdict: result.verdict.rawValue, analysis: result.analysis)
+        } else {
+            gateWindow.showAuditUnavailable()
+        }
     }
 
     gateWindow.show()
     app.activate(ignoringOtherApps: true)
     app.run()
 
-    // Fallback exit if respond() hasn't been called yet
-    exit(2)
+    // Fallback: if app.run() returns without respond() being called, deny cleanly
+    if !hasResponded {
+        print(HookOutput.deny(reason: "Gate window closed without decision").toJSON())
+        fflush(stdout)
+    }
+    exit(0)
 }
