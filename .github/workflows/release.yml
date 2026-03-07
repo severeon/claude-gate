@@ -75,7 +75,7 @@ jobs:
 
           gh release create "$VERSION" \
             --title "claude-gate $VERSION" \
-            --notes "$(cat <<'EOF'
+            --notes "$(cat <<EOF
           ## Install
 
           ### Quick install (download binary)
