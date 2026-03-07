@@ -29,7 +29,7 @@ jobs:
           git diff origin/main...HEAD > /tmp/pr-diff.txt
 
           # Run claude with the review prompt
-          claude --print -m "You are reviewing a PR for claude-gate, a macOS Swift CLI that gates Claude Code tool calls behind Touch ID authentication. Review the diff below for:
+          claude --print "You are reviewing a PR for claude-gate, a macOS Swift CLI that gates Claude Code tool calls behind Touch ID authentication. Review the diff below for:
           1. Security issues (this is a security tool — correctness is critical)
           2. Swift/AppKit correctness (thread safety, memory, lifecycle)
           3. Hook contract compliance (exit codes, JSON format per Claude Code docs)
