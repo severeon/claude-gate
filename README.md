@@ -198,6 +198,7 @@ flowchart LR
 - **3 retries** before auto-deny
 - **Configurable timeout** (default 60s) with visual countdown in the gate window
 - **Configurable timeout action** — `deny` (default) or `passthrough` when timeout expires
+- **OS notifications** — macOS notification when a gate window appears, so you're alerted even if focused elsewhere
 
 ## Audit Log
 
