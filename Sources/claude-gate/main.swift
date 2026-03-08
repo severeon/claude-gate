@@ -30,6 +30,9 @@ do {
     exit(2)
 }
 
+// Configure voice
+GateVoice.shared.configure(enabled: engine.voiceEnabled)
+
 // Evaluate
 let (matchedRule, action) = engine.evaluate(input)
 
@@ -229,6 +232,7 @@ case .gate:
 
     gateWindow.show()
     gateWindow.startCountdown()
+    GateVoice.shared.announceGate(ruleName: rule.name, riskLevel: rule.risk.rawValue, command: displayText)
     app.activate(ignoringOtherApps: true)
     app.run()
 

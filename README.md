@@ -123,6 +123,7 @@ Rules live in `~/.config/claude-gate/rules.toml`. They're evaluated top-to-botto
 action = "passthrough"   # what to do when no rule matches
 timeout = 60             # seconds before auto-action on gate windows
 timeout_action = "deny"  # action when timeout expires: deny | passthrough
+voice = false            # enable text-to-speech for gate announcements
 
 [[rules]]
 name = "Block: recursive delete of system paths"
@@ -203,6 +204,7 @@ flowchart LR
 - **Configurable timeout** (default 60s) with visual countdown in the gate window
 - **Configurable timeout action** — `deny` (default) or `passthrough` when timeout expires
 - **OS notifications** — macOS notification when a gate window appears, so you're alerted even if focused elsewhere
+- **Voice announcements** — optional TTS that reads gate requests aloud (enable with `voice = true` in config)
 
 ## Audit Log
 

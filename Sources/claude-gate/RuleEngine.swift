@@ -5,6 +5,7 @@ class RuleEngine {
     let defaultAction: RuleAction
     let rules: [Rule]
     let timeoutAction: RuleAction
+    let voiceEnabled: Bool
     private(set) var timeout: TimeInterval
 
     init(configPath: String) throws {
@@ -40,6 +41,14 @@ class RuleEngine {
             self.timeoutAction = action
         } else {
             self.timeoutAction = .deny
+        }
+
+        // Parse voice setting (default false)
+        if let defaults = table["defaults"]?.table,
+           let v = defaults["voice"]?.bool {
+            self.voiceEnabled = v
+        } else {
+            self.voiceEnabled = false
         }
 
         // Safety: passthrough on timeout can bypass auth — enforce minimum 30s

@@ -2,6 +2,11 @@
 
 All notable changes to claude-gate are documented here.
 
+## [v0.4.0] - 2026-03-08
+
+### Added
+- **Voice announcements**: Optional text-to-speech for gate events using macOS NSSpeechSynthesizer. Reads the rule name, risk level, and command aloud when a gate window appears. Enable with `voice = true` in `[defaults]` section of rules.toml. Disabled by default. (#16)
+
 ## [v0.3.0] - 2026-03-08
 
 ### Added
