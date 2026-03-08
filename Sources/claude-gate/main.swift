@@ -195,6 +195,23 @@ case .gate:
         }
     }
 
+    gateWindow.onRequestJustification = {
+        Justification.request(input: input, ruleName: rule.name) { justification in
+            respondLock.lock()
+            let alreadyDone = hasResponded
+            respondLock.unlock()
+            guard !alreadyDone else { return }
+
+            DispatchQueue.main.async {
+                if let justification = justification {
+                    gateWindow.showJustificationResponse(justification)
+                } else {
+                    gateWindow.showJustificationUnavailable()
+                }
+            }
+        }
+    }
+
     // Kick off security audit in background (non-blocking)
     SecurityAudit.run(input: input, ruleName: rule.name, ruleReason: rule.reason) { result in
         // Guard: don't update UI if the window has already been resolved

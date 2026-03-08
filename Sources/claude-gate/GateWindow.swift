@@ -6,11 +6,14 @@ class GateWindow: NSObject, NSWindowDelegate {
     var onTimeout: (() -> Void)?
     var onAlwaysAllow: (() -> Void)?
     var onAlwaysDeny: (() -> Void)?
+    var onRequestJustification: (() -> Void)?
 
     private let window: NSWindow
     private let errorLabel: NSTextField
     private let auditHeader: NSTextField
     private let auditLabel: NSTextField
+    private let justificationResponseLabel: NSTextField
+    private let whyButton: NSButton
     private let stackView: NSStackView
     private var resolved = false
 
@@ -137,6 +140,18 @@ class GateWindow: NSObject, NSWindowDelegate {
         auditLabel.isHidden = true
         self.auditLabel = auditLabel
 
+        // "Why?" button and justification response
+        let whyButton = NSButton(title: "Why?", target: nil, action: nil)
+        whyButton.bezelStyle = .rounded
+        whyButton.contentTintColor = .systemBlue
+        self.whyButton = whyButton
+
+        let justificationResponseLabel = NSTextField(wrappingLabelWithString: "")
+        justificationResponseLabel.font = NSFont.systemFont(ofSize: 12)
+        justificationResponseLabel.textColor = .secondaryLabelColor
+        justificationResponseLabel.isHidden = true
+        self.justificationResponseLabel = justificationResponseLabel
+
         // Error label (hidden initially)
         let errorLabel = NSTextField(labelWithString: "")
         errorLabel.font = NSFont.systemFont(ofSize: 12)
@@ -191,6 +206,8 @@ class GateWindow: NSObject, NSWindowDelegate {
         stackView.addArrangedSubview(auditSeparator)
         stackView.addArrangedSubview(auditHeader)
         stackView.addArrangedSubview(auditLabel)
+        stackView.addArrangedSubview(whyButton)
+        stackView.addArrangedSubview(justificationResponseLabel)
         stackView.addArrangedSubview(spacer)
         stackView.addArrangedSubview(errorLabel)
         stackView.addArrangedSubview(persistBar)
@@ -217,6 +234,7 @@ class GateWindow: NSObject, NSWindowDelegate {
             reasonLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
             cwdLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
             auditLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            justificationResponseLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
 
             buttonBar.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -20),
 
@@ -244,6 +262,8 @@ class GateWindow: NSObject, NSWindowDelegate {
         alwaysAllowButton.action = #selector(alwaysAllowClicked)
         alwaysDenyButton.target = self
         alwaysDenyButton.action = #selector(alwaysDenyClicked)
+        whyButton.target = self
+        whyButton.action = #selector(whyClicked)
     }
 
     func show() {
@@ -302,6 +322,21 @@ class GateWindow: NSObject, NSWindowDelegate {
         auditLabel.isHidden = false
     }
 
+    /// Show the justification response from the API
+    func showJustificationResponse(_ text: String) {
+        whyButton.isHidden = true
+        justificationResponseLabel.stringValue = text
+        justificationResponseLabel.isHidden = false
+    }
+
+    /// Show that justification is unavailable
+    func showJustificationUnavailable() {
+        whyButton.isHidden = true
+        justificationResponseLabel.stringValue = "Justification unavailable (no ANTHROPIC_API_KEY)"
+        justificationResponseLabel.textColor = .tertiaryLabelColor
+        justificationResponseLabel.isHidden = false
+    }
+
     /// Show that the audit is unavailable (no API key)
     func showAuditUnavailable() {
         auditHeader.stringValue = "SECURITY AUDIT: unavailable (no ANTHROPIC_API_KEY)"
@@ -331,6 +366,12 @@ class GateWindow: NSObject, NSWindowDelegate {
         countdownTimer = nil
         onAlwaysDeny?()
         window.close()
+    }
+
+    @objc private func whyClicked() {
+        whyButton.isEnabled = false
+        whyButton.title = "Asking..."
+        onRequestJustification?()
     }
 
     @objc private func cancelClicked() {

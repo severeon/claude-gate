@@ -106,6 +106,10 @@ block-beta
 
 The **Agent Justification** field shows Claude's own `description` of why it's using the tool, giving you context for your decision.
 
+### "Why?" Button
+
+Click the **Why?** button to ask Claude to explain why the intercepted command is needed, using the session transcript for context. Requires `ANTHROPIC_API_KEY` to be set. The response appears inline in the gate window.
+
 ### Persistent Rules
 
 The **Always Allow** and **Always Deny** buttons create a permanent rule in your `rules.toml` for the exact command. The rule is inserted at the top of the rules list so it takes priority (first-match-wins). This eliminates repeated prompts for trusted or forbidden commands.
