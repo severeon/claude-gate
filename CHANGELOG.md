@@ -2,6 +2,11 @@
 
 All notable changes to claude-gate are documented here.
 
+## [v0.3.0] - 2026-03-08
+
+### Added
+- **"Why?" justification button**: Gate window now includes a "Why?" button that asks Claude to explain why the intercepted command is needed. Uses session transcript context to provide a concise, plain-text explanation (2-4 sentences). Requires `ANTHROPIC_API_KEY`. (#15)
+
 ## [v0.2.0] - 2026-03-08
 
 ### Added
