@@ -2,6 +2,11 @@
 
 All notable changes to claude-gate are documented here.
 
+## [v0.5.1] - 2026-03-08
+
+### Fixed
+- **Release workflow**: Fixed heredoc causing backticks in release notes to be executed as commands. Curl and JSON settings were being run instead of used as text.
+
 ## [v0.5.0] - 2026-03-08
 
 ### Changed
