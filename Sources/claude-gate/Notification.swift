@@ -12,11 +12,18 @@ class GateNotification: NSObject, UNUserNotificationCenterDelegate {
         center.delegate = self
     }
 
-    /// Request notification permission (called once at startup).
-    func requestPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, error in
-            if let error = error {
-                FileHandle.standardError.write(Data("claude-gate: Notification permission error: \(error.localizedDescription)\n".utf8))
+    /// Request notification permission and call completion when done.
+    func ensurePermission(completion: @escaping () -> Void) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                completion()
+            case .notDetermined:
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                    if granted { completion() }
+                }
+            default:
+                break  // denied or ephemeral — skip notification
             }
         }
     }
