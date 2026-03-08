@@ -14,6 +14,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("LocalAuthentication"),
                 .linkedFramework("AppKit"),
+                .linkedFramework("UserNotifications"),
             ]
         ),
     ]

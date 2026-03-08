@@ -69,6 +69,10 @@ case .gate:
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
+    // Send OS notification
+    GateNotification.shared.requestPermission()
+    GateNotification.shared.notify(ruleName: rule.name, riskLevel: rule.risk.rawValue, command: displayText)
+
     // Guard against double output — only one response allowed
     var hasResponded = false
     let respondLock = NSLock()
