@@ -24,9 +24,122 @@ class GateWindow: NSObject, NSWindowDelegate {
     private var countdownTimer: Timer?
     private let timeoutActionWord: String
 
+    // MARK: - Styled Button Factory
+
+    private static func styledButton(
+        title: String,
+        backgroundColor: NSColor,
+        textColor: NSColor = .white,
+        fontSize: CGFloat = 13,
+        horizontalPadding: CGFloat = 16,
+        verticalPadding: CGFloat = 6
+    ) -> NSButton {
+        let button = NSButton(title: title, target: nil, action: nil)
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = backgroundColor.cgColor
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: textColor,
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+            ]
+        )
+        button.contentTintColor = textColor
+
+        // Minimum size via intrinsic content size padding
+        let width = (title as NSString).size(withAttributes: [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        ]).width + horizontalPadding * 2
+        let height = fontSize + verticalPadding * 2
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: width),
+            button.heightAnchor.constraint(equalToConstant: height),
+        ])
+
+        return button
+    }
+
+    // MARK: - Risk Badge Factory
+
+    private static func riskBadge(riskLevel: String) -> NSView {
+        let riskColor: NSColor = {
+            switch riskLevel.lowercased() {
+            case "critical": return .systemRed
+            case "high": return .systemOrange
+            case "medium": return .systemYellow
+            case "low": return .systemGreen
+            default: return .systemGray
+            }
+        }()
+
+        let badgeText = riskLevel.uppercased()
+        let label = NSTextField(labelWithString: badgeText)
+        label.font = NSFont.boldSystemFont(ofSize: 11)
+        label.textColor = .white
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let badge = NSView()
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 4
+        badge.layer?.backgroundColor = riskColor.cgColor
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: badge.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: badge.trailingAnchor, constant: -8),
+            label.topAnchor.constraint(equalTo: badge.topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: badge.bottomAnchor, constant: -3),
+        ])
+
+        // Wrapper so NSStackView gets the right alignment
+        let wrapper = NSStackView(views: [badge])
+        wrapper.alignment = .leading
+        return wrapper
+    }
+
+    // MARK: - Section Container Factory
+
+    private static func sectionContainer(views: [NSView], backgroundColor: NSColor? = nil) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        if let bg = backgroundColor {
+            container.layer?.backgroundColor = bg.cgColor
+        } else {
+            container.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.1).cgColor
+        }
+        container.layer?.cornerRadius = 8
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let innerStack = NSStackView()
+        innerStack.orientation = .vertical
+        innerStack.alignment = .leading
+        innerStack.spacing = 4
+        innerStack.translatesAutoresizingMaskIntoConstraints = false
+        innerStack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+
+        for v in views {
+            innerStack.addArrangedSubview(v)
+        }
+
+        container.addSubview(innerStack)
+        NSLayoutConstraint.activate([
+            innerStack.topAnchor.constraint(equalTo: container.topAnchor),
+            innerStack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            innerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            innerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
+        return container
+    }
+
     init(ruleName: String, riskLevel: String, reason: String, commandText: String, workingDirectory: String, justification: String? = nil, timeout: Int = 60, timeoutAction: String = "deny") {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 520),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -42,27 +155,16 @@ class GateWindow: NSObject, NSWindowDelegate {
         stackView.orientation = .vertical
         stackView.alignment = .leading
         stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        stackView.spacing = 8
+        stackView.spacing = 6
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.stackView = stackView
 
-        // Rule name
+        // Rule name (title)
         let ruleLabel = NSTextField(labelWithString: ruleName)
         ruleLabel.font = NSFont.boldSystemFont(ofSize: 16)
 
-        // Risk level
-        let riskColor: NSColor = {
-            switch riskLevel.lowercased() {
-            case "critical": return .systemRed
-            case "high": return .systemOrange
-            case "medium": return .systemYellow
-            case "low": return .systemGreen
-            default: return .labelColor
-            }
-        }()
-        let riskLabel = NSTextField(labelWithString: "Risk: \(riskLevel.uppercased())")
-        riskLabel.font = NSFont.boldSystemFont(ofSize: 13)
-        riskLabel.textColor = riskColor
+        // Risk badge (colored pill)
+        let riskBadgeView = GateWindow.riskBadge(riskLevel: riskLevel)
 
         // Countdown timer
         let actionWord = timeoutAction == "passthrough" ? "Auto-allow" : "Auto-deny"
@@ -78,29 +180,34 @@ class GateWindow: NSObject, NSWindowDelegate {
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
 
-        // WHY section
+        // WHY section (in a shaded container)
         let whyHeader = NSTextField(labelWithString: "WHY:")
-        whyHeader.font = NSFont.boldSystemFont(ofSize: 13)
+        whyHeader.font = NSFont.boldSystemFont(ofSize: 12)
+        whyHeader.textColor = .secondaryLabelColor
 
         let reasonLabel = NSTextField(wrappingLabelWithString: reason)
         reasonLabel.font = NSFont.systemFont(ofSize: 13)
 
+        let whyContainer = GateWindow.sectionContainer(views: [whyHeader, reasonLabel])
+
         // AGENT JUSTIFICATION section (if provided)
-        var justificationViews: [NSView] = []
+        var justificationContainer: NSView?
         if let justification = justification, !justification.isEmpty {
             let justHeader = NSTextField(labelWithString: "AGENT JUSTIFICATION:")
-            justHeader.font = NSFont.boldSystemFont(ofSize: 13)
+            justHeader.font = NSFont.boldSystemFont(ofSize: 12)
+            justHeader.textColor = .secondaryLabelColor
 
             let justLabel = NSTextField(wrappingLabelWithString: justification)
             justLabel.font = NSFont.systemFont(ofSize: 13)
             justLabel.textColor = .secondaryLabelColor
 
-            justificationViews = [justHeader, justLabel]
+            justificationContainer = GateWindow.sectionContainer(views: [justHeader, justLabel])
         }
 
-        // COMMAND section
+        // COMMAND section (in a shaded container)
         let commandHeader = NSTextField(labelWithString: "COMMAND:")
-        commandHeader.font = NSFont.boldSystemFont(ofSize: 13)
+        commandHeader.font = NSFont.boldSystemFont(ofSize: 12)
+        commandHeader.textColor = .secondaryLabelColor
 
         let commandTextView = NSTextView()
         commandTextView.isEditable = false
@@ -109,29 +216,54 @@ class GateWindow: NSObject, NSWindowDelegate {
         commandTextView.backgroundColor = NSColor(calibratedRed: 0x1e/255.0, green: 0x1e/255.0, blue: 0x1e/255.0, alpha: 1.0)
         commandTextView.textColor = .white
         commandTextView.string = commandText
-        commandTextView.textContainerInset = NSSize(width: 6, height: 6)
+        commandTextView.textContainerInset = NSSize(width: 8, height: 8)
 
         let scrollView = NSScrollView()
         scrollView.documentView = commandTextView
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .lineBorder
+        scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 6
+
+        let commandContainer = NSView()
+        commandContainer.translatesAutoresizingMaskIntoConstraints = false
+        commandContainer.wantsLayer = true
+        commandContainer.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.1).cgColor
+        commandContainer.layer?.cornerRadius = 8
+
+        let commandInnerStack = NSStackView()
+        commandInnerStack.orientation = .vertical
+        commandInnerStack.alignment = .leading
+        commandInnerStack.spacing = 6
+        commandInnerStack.translatesAutoresizingMaskIntoConstraints = false
+        commandInnerStack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        commandInnerStack.addArrangedSubview(commandHeader)
+        commandInnerStack.addArrangedSubview(scrollView)
+
+        commandContainer.addSubview(commandInnerStack)
+        NSLayoutConstraint.activate([
+            commandInnerStack.topAnchor.constraint(equalTo: commandContainer.topAnchor),
+            commandInnerStack.bottomAnchor.constraint(equalTo: commandContainer.bottomAnchor),
+            commandInnerStack.leadingAnchor.constraint(equalTo: commandContainer.leadingAnchor),
+            commandInnerStack.trailingAnchor.constraint(equalTo: commandContainer.trailingAnchor),
+        ])
 
         // WORKING DIRECTORY section
         let cwdHeader = NSTextField(labelWithString: "WORKING DIRECTORY:")
-        cwdHeader.font = NSFont.boldSystemFont(ofSize: 13)
+        cwdHeader.font = NSFont.boldSystemFont(ofSize: 12)
+        cwdHeader.textColor = .secondaryLabelColor
 
         let cwdLabel = NSTextField(labelWithString: workingDirectory)
-        cwdLabel.font = NSFont.systemFont(ofSize: 13)
+        cwdLabel.font = NSFont.systemFont(ofSize: 12)
         cwdLabel.lineBreakMode = .byTruncatingMiddle
+        cwdLabel.textColor = .secondaryLabelColor
 
-        // SECURITY AUDIT section (hidden initially, shown when audit completes)
-        let auditSeparator = NSBox()
-        auditSeparator.boxType = .separator
-        auditSeparator.translatesAutoresizingMaskIntoConstraints = false
+        let cwdContainer = GateWindow.sectionContainer(views: [cwdHeader, cwdLabel])
 
+        // SECURITY AUDIT section
         let auditHeader = NSTextField(labelWithString: "SECURITY AUDIT: analyzing...")
-        auditHeader.font = NSFont.boldSystemFont(ofSize: 13)
+        auditHeader.font = NSFont.boldSystemFont(ofSize: 12)
         auditHeader.textColor = .secondaryLabelColor
         self.auditHeader = auditHeader
 
@@ -147,10 +279,17 @@ class GateWindow: NSObject, NSWindowDelegate {
         auditDisclaimer.isHidden = true
         self.auditDisclaimer = auditDisclaimer
 
-        // "Why?" button and justification response
-        let whyButton = NSButton(title: "Why?", target: nil, action: nil)
-        whyButton.bezelStyle = .rounded
-        whyButton.contentTintColor = .systemBlue
+        let auditContainer = GateWindow.sectionContainer(views: [auditHeader, auditLabel, auditDisclaimer])
+
+        // "Why?" button — small, blue, inline style
+        let whyButton = GateWindow.styledButton(
+            title: "Why?",
+            backgroundColor: .systemBlue,
+            textColor: .white,
+            fontSize: 11,
+            horizontalPadding: 10,
+            verticalPadding: 4
+        )
         self.whyButton = whyButton
 
         let justificationResponseLabel = NSTextField(wrappingLabelWithString: "")
@@ -168,24 +307,41 @@ class GateWindow: NSObject, NSWindowDelegate {
         errorLabel.maximumNumberOfLines = 2
         self.errorLabel = errorLabel
 
-        // Button bar
-        let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
-        let authButton = NSButton(title: "Authenticate", target: nil, action: nil)
-        authButton.bezelStyle = .rounded
+        // Styled buttons
+        let cancelButton = GateWindow.styledButton(
+            title: "Cancel",
+            backgroundColor: NSColor.systemGray.withAlphaComponent(0.3),
+            textColor: .labelColor,
+            fontSize: 13
+        )
+
+        let authButton = GateWindow.styledButton(
+            title: "Authenticate",
+            backgroundColor: .systemGreen,
+            textColor: .white,
+            fontSize: 14,
+            horizontalPadding: 20,
+            verticalPadding: 8
+        )
         authButton.keyEquivalent = "\r"
-        cancelButton.bezelStyle = .rounded
 
         let buttonBar = NSStackView(views: [cancelButton, authButton])
         buttonBar.orientation = .horizontal
         buttonBar.spacing = 12
 
         // Persistent rule buttons
-        let alwaysAllowButton = NSButton(title: "Always Allow", target: nil, action: nil)
-        alwaysAllowButton.bezelStyle = .rounded
-        alwaysAllowButton.contentTintColor = .systemGreen
-        let alwaysDenyButton = NSButton(title: "Always Deny", target: nil, action: nil)
-        alwaysDenyButton.bezelStyle = .rounded
-        alwaysDenyButton.contentTintColor = .systemRed
+        let alwaysAllowButton = GateWindow.styledButton(
+            title: "Always Allow",
+            backgroundColor: .systemGreen.withAlphaComponent(0.2),
+            textColor: .systemGreen,
+            fontSize: 12
+        )
+        let alwaysDenyButton = GateWindow.styledButton(
+            title: "Always Deny",
+            backgroundColor: .systemRed.withAlphaComponent(0.2),
+            textColor: .systemRed,
+            fontSize: 12
+        )
 
         let persistBar = NSStackView(views: [alwaysDenyButton, alwaysAllowButton])
         persistBar.orientation = .horizontal
@@ -196,29 +352,49 @@ class GateWindow: NSObject, NSWindowDelegate {
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
 
-        // Add all views to stack
+        // Add all views to stack with increased spacing between major sections
         stackView.addArrangedSubview(ruleLabel)
-        stackView.addArrangedSubview(riskLabel)
+        stackView.setCustomSpacing(8, after: ruleLabel)
+
+        stackView.addArrangedSubview(riskBadgeView)
+        stackView.setCustomSpacing(4, after: riskBadgeView)
+
         stackView.addArrangedSubview(countdownLabel)
+        stackView.setCustomSpacing(12, after: countdownLabel)
+
         stackView.addArrangedSubview(separator)
-        stackView.addArrangedSubview(whyHeader)
-        stackView.addArrangedSubview(reasonLabel)
-        for view in justificationViews {
-            stackView.addArrangedSubview(view)
+        stackView.setCustomSpacing(14, after: separator)
+
+        stackView.addArrangedSubview(whyContainer)
+        stackView.setCustomSpacing(10, after: whyContainer)
+
+        if let jc = justificationContainer {
+            stackView.addArrangedSubview(jc)
+            stackView.setCustomSpacing(10, after: jc)
         }
-        stackView.addArrangedSubview(commandHeader)
-        stackView.addArrangedSubview(scrollView)
-        stackView.addArrangedSubview(cwdHeader)
-        stackView.addArrangedSubview(cwdLabel)
-        stackView.addArrangedSubview(auditSeparator)
-        stackView.addArrangedSubview(auditHeader)
-        stackView.addArrangedSubview(auditLabel)
-        stackView.addArrangedSubview(auditDisclaimer)
+
+        stackView.addArrangedSubview(commandContainer)
+        stackView.setCustomSpacing(10, after: commandContainer)
+
+        stackView.addArrangedSubview(cwdContainer)
+        stackView.setCustomSpacing(14, after: cwdContainer)
+
+        stackView.addArrangedSubview(auditContainer)
+        stackView.setCustomSpacing(10, after: auditContainer)
+
         stackView.addArrangedSubview(whyButton)
         stackView.addArrangedSubview(justificationResponseLabel)
+        stackView.setCustomSpacing(8, after: justificationResponseLabel)
+
         stackView.addArrangedSubview(spacer)
+        stackView.setCustomSpacing(8, after: spacer)
+
         stackView.addArrangedSubview(errorLabel)
+        stackView.setCustomSpacing(10, after: errorLabel)
+
         stackView.addArrangedSubview(persistBar)
+        stackView.setCustomSpacing(8, after: persistBar)
+
         stackView.addArrangedSubview(buttonBar)
 
         // Layout hints
@@ -234,14 +410,17 @@ class GateWindow: NSObject, NSWindowDelegate {
             stackView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
 
             separator.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            auditSeparator.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
 
             scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: 80),
-            scrollView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            scrollView.widthAnchor.constraint(equalTo: commandInnerStack.widthAnchor, constant: -24),
 
-            reasonLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            cwdLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            auditLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            whyContainer.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            commandContainer.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            cwdContainer.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            auditContainer.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+
+            reasonLabel.widthAnchor.constraint(equalTo: whyContainer.widthAnchor, constant: -24),
+            auditLabel.widthAnchor.constraint(equalTo: auditContainer.widthAnchor, constant: -24),
             justificationResponseLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
 
             buttonBar.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -20),
@@ -249,13 +428,11 @@ class GateWindow: NSObject, NSWindowDelegate {
             persistBar.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 20),
         ])
 
-        // Constrain justification label width if present
-        for view in justificationViews {
-            if view is NSTextField, view != justificationViews.first {
-                NSLayoutConstraint.activate([
-                    view.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-                ])
-            }
+        // Constrain justification container width if present
+        if let jc = justificationContainer {
+            NSLayoutConstraint.activate([
+                jc.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
+            ])
         }
 
         super.init()
@@ -379,7 +556,13 @@ class GateWindow: NSObject, NSWindowDelegate {
 
     @objc private func whyClicked() {
         whyButton.isEnabled = false
-        whyButton.title = "Asking..."
+        whyButton.attributedTitle = NSAttributedString(
+            string: "Asking...",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            ]
+        )
         onRequestJustification?()
     }
 
