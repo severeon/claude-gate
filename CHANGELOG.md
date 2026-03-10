@@ -4,6 +4,9 @@ All notable changes to claude-gate are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **Gate window visual refresh**: Modern layout with improved visual hierarchy — rule name + risk badge in title row, section backgrounds with rounded corners, color-coded styled buttons (green approve, red deny, blue info) with hover effects, uppercase pill-style risk badge, better typography weight progression (semibold title > semibold section headers > regular body > monospaced code), improved spacing and custom section gaps. All custom colors adapt to both light and dark mode. (#15)
+
 ### Improved
 - **API key error messages**: "Unavailable" messages in the gate window now show both `CLAUDE_GATE_API_KEY` and `ANTHROPIC_API_KEY` env var names so users know exactly what to set. (#16)
 - **API error logging**: Justification and security audit API failures now log details to stderr for easier debugging (e.g., invalid key, network errors). (#16)
