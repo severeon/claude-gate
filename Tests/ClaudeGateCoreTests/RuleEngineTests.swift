@@ -7,17 +7,22 @@ final class RuleEngineTests: XCTestCase {
         Bundle.module.path(forResource: name, ofType: "toml", inDirectory: "Fixtures")!
     }
 
-    private func makeInput(tool: String, command: String? = nil, filePath: String? = nil) -> HookInput {
-        var toolInput: [String: AnyCodable] = [:]
+    private func makeInput(tool: String, command: String? = nil, filePath: String? = nil, extraFields: [String: Any]? = nil) -> HookInput {
+        var toolInput: [String: Any] = [:]
         if let command = command {
-            toolInput["command"] = AnyCodable(command)
+            toolInput["command"] = command
         }
         if let filePath = filePath {
-            toolInput["file_path"] = AnyCodable(filePath)
+            toolInput["file_path"] = filePath
+        }
+        if let extra = extraFields {
+            for (key, value) in extra {
+                toolInput[key] = value
+            }
         }
         return try! JSONDecoder().decode(HookInput.self, from: JSONSerialization.data(withJSONObject: [
             "tool_name": tool,
-            "tool_input": toolInput.mapValues { $0.value }
+            "tool_input": toolInput
         ]))
     }
 
@@ -238,5 +243,180 @@ final class RuleEngineTests: XCTestCase {
         XCTAssertNil(input.command)
         XCTAssertNil(input.filePath)
         XCTAssertNil(input.cwd)
+    }
+
+    // MARK: - Wildcard Tool Matching
+
+    func testWildcardMatchesBrowserMCPTool() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "mcp__claude-in-chrome__navigate", extraFields: ["url": "https://example.com"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: browser automation")
+    }
+
+    func testWildcardMatchesDifferentBrowserAction() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "mcp__claude-in-chrome__javascript_tool", extraFields: ["code": "alert(1)"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: browser automation")
+    }
+
+    func testWildcardMatchesFilesystemMCP() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "mcp__filesystem__write_file", extraFields: ["path": "/etc/hosts"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: all filesystem MCP")
+    }
+
+    func testExactMCPToolMatch() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "mcp__slack__send_message", extraFields: ["channel": "#general", "message": "hello"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: exact MCP tool")
+    }
+
+    func testWildcardDoesNotMatchDifferentNamespace() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        // mcp__linear__create_issue should not match mcp__claude-in-chrome__* or others
+        let input = makeInput(tool: "mcp__linear__create_issue", extraFields: ["title": "Bug"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertNil(rule)
+        XCTAssertEqual(action, .passthrough)
+    }
+
+    func testObsidianWriteMatchesWithPattern() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        // mcp__obsidian__write_note matches wildcard mcp__obsidian__*
+        // Pattern "write_note|delete_note|patch_note" matches because the default case
+        // checks against "toolName + toolInputAsString", so the action in the tool name matches.
+        let input = makeInput(tool: "mcp__obsidian__write_note", extraFields: ["path": "daily/note.md", "content": "hello"])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: Obsidian writes")
+    }
+
+    func testObsidianReadPassesThrough() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        // read_note should NOT match the write/delete pattern
+        let input = makeInput(tool: "mcp__obsidian__read_note", extraFields: ["path": "daily/note.md"])
+        let (rule, action) = engine.evaluate(input)
+        // The wildcard matches but the pattern won't match "read_note" against write/delete
+        // So it falls through to default action
+        XCTAssertNil(rule)
+        XCTAssertEqual(action, .passthrough)
+    }
+
+    // MARK: - Agent Tool Matching
+
+    func testAgentBackgroundGated() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "Agent", extraFields: [
+            "prompt": "Delete all test files",
+            "subagent_type": "general-purpose",
+            "run_in_background": true
+        ])
+        let (rule, action) = engine.evaluate(input)
+        XCTAssertEqual(action, .gate)
+        XCTAssertEqual(rule?.name, "Gate: background agents")
+    }
+
+    func testAgentForegroundPassesThrough() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        let input = makeInput(tool: "Agent", extraFields: [
+            "prompt": "Search for TODO comments",
+            "subagent_type": "Explore"
+        ])
+        let (rule, action) = engine.evaluate(input)
+        // run_in_background is not set/true, so the pattern won't match
+        XCTAssertNil(rule)
+        XCTAssertEqual(action, .passthrough)
+    }
+
+    // MARK: - MCP HookInput Properties
+
+    func testIsMCPTool() throws {
+        let input = makeInput(tool: "mcp__obsidian__write_note", extraFields: ["path": "note.md"])
+        XCTAssertTrue(input.isMCPTool)
+    }
+
+    func testIsNotMCPTool() throws {
+        let input = makeInput(tool: "Bash", command: "ls")
+        XCTAssertFalse(input.isMCPTool)
+    }
+
+    func testMCPNamespace() throws {
+        let input = makeInput(tool: "mcp__obsidian__write_note", extraFields: ["path": "note.md"])
+        XCTAssertEqual(input.mcpNamespace, "obsidian")
+    }
+
+    func testMCPAction() throws {
+        let input = makeInput(tool: "mcp__obsidian__write_note", extraFields: ["path": "note.md"])
+        XCTAssertEqual(input.mcpAction, "write_note")
+    }
+
+    func testMCPNamespaceWithHyphen() throws {
+        let input = makeInput(tool: "mcp__claude-in-chrome__navigate", extraFields: ["url": "https://example.com"])
+        XCTAssertEqual(input.mcpNamespace, "claude-in-chrome")
+        XCTAssertEqual(input.mcpAction, "navigate")
+    }
+
+    func testAgentDisplaySummary() throws {
+        let input = makeInput(tool: "Agent", extraFields: [
+            "prompt": "Search for TODO comments in the codebase",
+            "subagent_type": "Explore"
+        ])
+        let summary = input.displaySummary
+        XCTAssertTrue(summary.contains("Agent"))
+        XCTAssertTrue(summary.contains("Explore"))
+        XCTAssertTrue(summary.contains("TODO"))
+    }
+
+    func testMCPDisplaySummary() throws {
+        let input = makeInput(tool: "mcp__obsidian__write_note", extraFields: [
+            "path": "daily/2026-03-09.md",
+            "content": "Hello world",
+            "title": "Daily Note"
+        ])
+        let summary = input.displaySummary
+        XCTAssertTrue(summary.contains("obsidian"))
+        XCTAssertTrue(summary.contains("write_note"))
+        XCTAssertTrue(summary.contains("daily/2026-03-09.md"))
+    }
+
+    func testBashDisplaySummary() throws {
+        let input = makeInput(tool: "Bash", command: "git push --force")
+        XCTAssertEqual(input.displaySummary, "git push --force")
+    }
+
+    func testWriteDisplaySummary() throws {
+        let input = makeInput(tool: "Write", filePath: "/Users/me/.zshrc")
+        XCTAssertEqual(input.displaySummary, "Write: /Users/me/.zshrc")
+    }
+
+    // MARK: - Wildcard toolMatches Unit Tests
+
+    func testToolMatchesExact() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        XCTAssertTrue(engine.toolMatches(pattern: "Bash", toolName: "Bash"))
+        XCTAssertFalse(engine.toolMatches(pattern: "Bash", toolName: "Write"))
+    }
+
+    func testToolMatchesWildcard() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        XCTAssertTrue(engine.toolMatches(pattern: "mcp__*", toolName: "mcp__obsidian__write_note"))
+        XCTAssertTrue(engine.toolMatches(pattern: "mcp__*", toolName: "mcp__slack__send_message"))
+        XCTAssertFalse(engine.toolMatches(pattern: "mcp__*", toolName: "Agent"))
+        XCTAssertFalse(engine.toolMatches(pattern: "mcp__*", toolName: "Bash"))
+    }
+
+    func testToolMatchesNamespaceWildcard() throws {
+        let engine = try RuleEngine(configPath: fixturePath("test-rules"))
+        XCTAssertTrue(engine.toolMatches(pattern: "mcp__obsidian__*", toolName: "mcp__obsidian__write_note"))
+        XCTAssertTrue(engine.toolMatches(pattern: "mcp__obsidian__*", toolName: "mcp__obsidian__read_note"))
+        XCTAssertFalse(engine.toolMatches(pattern: "mcp__obsidian__*", toolName: "mcp__slack__send_message"))
     }
 }

@@ -45,3 +45,41 @@ path_pattern = '\.ssh/'
 action = "gate"
 reason = "Modifying SSH configuration"
 risk = "high"
+
+# Wildcard MCP rules for testing
+[[rules]]
+name = "Gate: browser automation"
+tool = "mcp__claude-in-chrome__*"
+action = "gate"
+reason = "Browser automation requires approval"
+risk = "high"
+
+[[rules]]
+name = "Gate: Obsidian writes"
+tool = "mcp__obsidian__*"
+pattern = '(write_note|delete_note|patch_note)'
+action = "gate"
+reason = "Modifying Obsidian vault"
+risk = "medium"
+
+[[rules]]
+name = "Gate: all filesystem MCP"
+tool = "mcp__filesystem__*"
+action = "gate"
+reason = "Filesystem MCP access"
+risk = "high"
+
+[[rules]]
+name = "Gate: exact MCP tool"
+tool = "mcp__slack__send_message"
+action = "gate"
+reason = "Sending Slack messages"
+risk = "high"
+
+[[rules]]
+name = "Gate: background agents"
+tool = "Agent"
+pattern = '"run_in_background"\s*:\s*true'
+action = "gate"
+reason = "Background agent execution"
+risk = "medium"

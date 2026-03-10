@@ -109,7 +109,7 @@ public class RuleEngine {
     }
 
     public func evaluate(_ input: HookInput) -> (Rule?, RuleAction) {
-        let matchingRules = rules.filter { $0.tool == input.toolName }
+        let matchingRules = rules.filter { toolMatches(pattern: $0.tool, toolName: input.toolName) }
 
         for rule in matchingRules {
             if matches(rule: rule, input: input) {
@@ -123,7 +123,8 @@ public class RuleEngine {
     // MARK: - Private
 
     private func matches(rule: Rule, input: HookInput) -> Bool {
-        switch rule.tool {
+        // Use the actual tool name for the switch, not the rule's (possibly wildcard) pattern
+        switch input.toolName {
         case "Bash":
             guard let pattern = rule.pattern else { return true }
             guard let command = input.command else { return false }
@@ -150,9 +151,28 @@ public class RuleEngine {
 
         default:
             guard let pattern = rule.pattern else { return true }
-            let text = input.toolInputAsString
+            // For MCP/Agent tools, match pattern against both tool name and input JSON.
+            // This allows patterns like "write_note|delete_note" to match the MCP action
+            // in the tool name (e.g., mcp__obsidian__write_note).
+            let text = input.toolName + " " + input.toolInputAsString
             return regexMatch(pattern: pattern, text: text)
         }
+    }
+
+    /// Match a rule's tool field against the actual tool name.
+    /// Supports exact match and glob-style wildcards:
+    ///   "Bash"              — exact match
+    ///   "mcp__*"            — matches any MCP tool
+    ///   "mcp__obsidian__*"  — matches any Obsidian MCP tool
+    ///   "Agent"             — exact match
+    func toolMatches(pattern: String, toolName: String) -> Bool {
+        if !pattern.contains("*") {
+            return pattern == toolName
+        }
+        // Convert glob pattern to regex: escape dots, replace * with .*
+        let escaped = pattern.replacingOccurrences(of: ".", with: "\\.")
+        let regexPattern = "^" + escaped.replacingOccurrences(of: "*", with: ".*") + "$"
+        return regexMatch(pattern: regexPattern, text: toolName)
     }
 
     private func regexMatch(pattern: String, text: String) -> Bool {

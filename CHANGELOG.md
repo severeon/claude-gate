@@ -2,6 +2,18 @@
 
 All notable changes to claude-gate are documented here.
 
+## [Unreleased]
+
+### Added
+- **Wildcard tool matching**: Rules can now use glob patterns in the `tool` field (e.g., `mcp__obsidian__*`, `mcp__*`) to match entire MCP namespaces instead of requiring exact tool names. (#17)
+- **MCP display summaries**: Gate windows show human-readable summaries for MCP and Agent tools (namespace/action with key fields) instead of raw JSON dumps. (#17)
+- **Default MCP/Agent rules**: Added gating rules for browser automation (`mcp__claude-in-chrome__*`), Obsidian write/delete, filesystem MCP, Slack messaging, GitHub API mutations, database MCP, and background Agent dispatch. (#17)
+- **MCP demo scenarios**: 11 new demo scenarios for MCP tools (Obsidian read/write/delete, browser navigation/JS, Slack send, filesystem write, GitHub PR, Agent background/foreground). (#17)
+- **MCP input helpers**: `HookInput` now exposes `isMCPTool`, `mcpNamespace`, `mcpAction`, `agentPrompt`, `agentType`, and `displaySummary` properties.
+
+### Changed
+- **Pattern matching for MCP tools**: The default rule matching case now checks patterns against both the tool name and input JSON, so patterns like `write_note|delete_note` correctly match MCP action names embedded in tool names. (#17)
+
 ## [v0.8.0] - 2026-03-09
 
 ### Added
