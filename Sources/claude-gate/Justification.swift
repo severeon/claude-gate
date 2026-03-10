@@ -132,11 +132,19 @@ class Justification {
         request.httpBody = bodyData
 
         let task = URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil,
+            if let error = error {
+                FileHandle.standardError.write(Data("claude-gate: Justification API error: \(error.localizedDescription)\n".utf8))
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let content = json["content"] as? [[String: Any]],
                   let firstBlock = content.first,
                   let text = firstBlock["text"] as? String else {
+                if let data = data, let body = String(data: data, encoding: .utf8) {
+                    FileHandle.standardError.write(Data("claude-gate: Justification API unexpected response: \(body.prefix(200))\n".utf8))
+                }
                 DispatchQueue.main.async { completion(nil) }
                 return
             }

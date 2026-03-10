@@ -2,6 +2,15 @@
 
 All notable changes to claude-gate are documented here.
 
+## [Unreleased]
+
+### Improved
+- **API key error messages**: "Unavailable" messages in the gate window now show both `CLAUDE_GATE_API_KEY` and `ANTHROPIC_API_KEY` env var names so users know exactly what to set. (#16)
+- **API error logging**: Justification and security audit API failures now log details to stderr for easier debugging (e.g., invalid key, network errors). (#16)
+
+### Added
+- **API key setup docs**: README now includes a dedicated section on configuring the Anthropic API key for the "Why?" justification and security audit features. (#16)
+
 ## [v0.7.0] - 2026-03-08
 
 ### Added

@@ -67,6 +67,24 @@ Then add the hook to `~/.claude/settings.json`:
 }
 ```
 
+## API Key Setup
+
+The **"Why?" justification** and **security audit** features use the Anthropic API (Claude Haiku) and require an API key.
+
+Set one of these environment variables (checked in this order):
+
+```bash
+# Preferred — dedicated key for claude-gate (separate billing/permissions)
+export CLAUDE_GATE_API_KEY="sk-ant-..."
+
+# Fallback — shared with other Anthropic tools
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Add the export to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) so it persists across sessions.
+
+Without an API key, claude-gate works normally for gating — the "Why?" button and security audit simply show "unavailable".
+
 ## How It Works
 
 claude-gate runs as a [Claude Code PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks). Every time Claude Code is about to use a tool (run a command, write a file, etc.), claude-gate evaluates the action against your rules:
