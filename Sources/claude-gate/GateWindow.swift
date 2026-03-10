@@ -15,7 +15,6 @@ class GateWindow: NSObject, NSWindowDelegate {
     private let auditDisclaimer: NSTextField
     private let justificationResponseLabel: NSTextField
     private let whyButton: NSButton
-    private let stackView: NSStackView
     private var resolved = false
 
     // Countdown
@@ -24,27 +23,61 @@ class GateWindow: NSObject, NSWindowDelegate {
     private var countdownTimer: Timer?
     private let timeoutActionWord: String
 
+    // Line number support
+    private let lineNumberView: NSTextField
+    private let commandTextView: NSTextView
+
     init(ruleName: String, riskLevel: String, reason: String, commandText: String, workingDirectory: String, justification: String? = nil, timeout: Int = 60, timeoutAction: String = "deny") {
+
+        // --- Compute window size based on content ---
+        let commandLines = commandText.components(separatedBy: "\n")
+        let lineCount = commandLines.count
+        let maxLineLength = commandLines.map({ $0.count }).max() ?? 0
+        let isLongCommand = lineCount > 3 || maxLineLength > 60
+
+        let minWidth: CGFloat = 520
+        let maxWidth: CGFloat = 1100
+        let minHeight: CGFloat = 420
+        let maxHeight: CGFloat = 800
+
+        // Side-by-side when command is long enough to warrant it
+        let useSideBySide = isLongCommand
+
+        let windowWidth: CGFloat
+        let windowHeight: CGFloat
+        if useSideBySide {
+            // Wider window for side-by-side
+            let charWidth: CGFloat = 7.2 // approximate monospace char width at 12pt
+            let codeWidth = min(CGFloat(maxLineLength) * charWidth + 80, 600) // +80 for line numbers + padding
+            windowWidth = min(max(340 + codeWidth, minWidth), maxWidth)
+            let codeHeight = min(CGFloat(lineCount) * 16 + 40, 400) // 16pt per line
+            windowHeight = min(max(codeHeight + 200, minHeight), maxHeight)
+        } else {
+            windowWidth = minWidth
+            windowHeight = minHeight
+        }
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 480),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "claude-gate: Authorization Required"
         window.level = .floating
+        window.minSize = NSSize(width: minWidth, height: minHeight)
+        window.maxSize = NSSize(width: maxWidth, height: maxHeight)
         window.center()
         self.window = window
 
-        // -- Build the content view --
+        // ===== LEFT PANEL: Rule info, risk, reason, justification, audit =====
 
-        let stackView = NSStackView()
-        stackView.orientation = .vertical
-        stackView.alignment = .leading
-        stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        stackView.spacing = 8
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        self.stackView = stackView
+        let leftStack = NSStackView()
+        leftStack.orientation = .vertical
+        leftStack.alignment = .leading
+        leftStack.spacing = 8
+        leftStack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        leftStack.translatesAutoresizingMaskIntoConstraints = false
 
         // Rule name
         let ruleLabel = NSTextField(labelWithString: ruleName)
@@ -98,25 +131,6 @@ class GateWindow: NSObject, NSWindowDelegate {
             justificationViews = [justHeader, justLabel]
         }
 
-        // COMMAND section
-        let commandHeader = NSTextField(labelWithString: "COMMAND:")
-        commandHeader.font = NSFont.boldSystemFont(ofSize: 13)
-
-        let commandTextView = NSTextView()
-        commandTextView.isEditable = false
-        commandTextView.isSelectable = true
-        commandTextView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        commandTextView.backgroundColor = NSColor(calibratedRed: 0x1e/255.0, green: 0x1e/255.0, blue: 0x1e/255.0, alpha: 1.0)
-        commandTextView.textColor = .white
-        commandTextView.string = commandText
-        commandTextView.textContainerInset = NSSize(width: 6, height: 6)
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = commandTextView
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .lineBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-
         // WORKING DIRECTORY section
         let cwdHeader = NSTextField(labelWithString: "WORKING DIRECTORY:")
         cwdHeader.font = NSFont.boldSystemFont(ofSize: 13)
@@ -125,7 +139,7 @@ class GateWindow: NSObject, NSWindowDelegate {
         cwdLabel.font = NSFont.systemFont(ofSize: 13)
         cwdLabel.lineBreakMode = .byTruncatingMiddle
 
-        // SECURITY AUDIT section (hidden initially, shown when audit completes)
+        // SECURITY AUDIT section
         let auditSeparator = NSBox()
         auditSeparator.boxType = .separator
         auditSeparator.translatesAutoresizingMaskIntoConstraints = false
@@ -168,6 +182,11 @@ class GateWindow: NSObject, NSWindowDelegate {
         errorLabel.maximumNumberOfLines = 2
         self.errorLabel = errorLabel
 
+        // Spacer
+        let leftSpacer = NSView()
+        leftSpacer.translatesAutoresizingMaskIntoConstraints = false
+        leftSpacer.setContentHuggingPriority(.defaultLow, for: .vertical)
+
         // Button bar
         let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
         let authButton = NSButton(title: "Authenticate", target: nil, action: nil)
@@ -178,6 +197,7 @@ class GateWindow: NSObject, NSWindowDelegate {
         let buttonBar = NSStackView(views: [cancelButton, authButton])
         buttonBar.orientation = .horizontal
         buttonBar.spacing = 12
+        buttonBar.translatesAutoresizingMaskIntoConstraints = false
 
         // Persistent rule buttons
         let alwaysAllowButton = NSButton(title: "Always Allow", target: nil, action: nil)
@@ -190,72 +210,293 @@ class GateWindow: NSObject, NSWindowDelegate {
         let persistBar = NSStackView(views: [alwaysDenyButton, alwaysAllowButton])
         persistBar.orientation = .horizontal
         persistBar.spacing = 12
-
-        // Spacer view
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
-
-        // Add all views to stack
-        stackView.addArrangedSubview(ruleLabel)
-        stackView.addArrangedSubview(riskLabel)
-        stackView.addArrangedSubview(countdownLabel)
-        stackView.addArrangedSubview(separator)
-        stackView.addArrangedSubview(whyHeader)
-        stackView.addArrangedSubview(reasonLabel)
-        for view in justificationViews {
-            stackView.addArrangedSubview(view)
-        }
-        stackView.addArrangedSubview(commandHeader)
-        stackView.addArrangedSubview(scrollView)
-        stackView.addArrangedSubview(cwdHeader)
-        stackView.addArrangedSubview(cwdLabel)
-        stackView.addArrangedSubview(auditSeparator)
-        stackView.addArrangedSubview(auditHeader)
-        stackView.addArrangedSubview(auditLabel)
-        stackView.addArrangedSubview(auditDisclaimer)
-        stackView.addArrangedSubview(whyButton)
-        stackView.addArrangedSubview(justificationResponseLabel)
-        stackView.addArrangedSubview(spacer)
-        stackView.addArrangedSubview(errorLabel)
-        stackView.addArrangedSubview(persistBar)
-        stackView.addArrangedSubview(buttonBar)
-
-        // Layout hints
-        buttonBar.translatesAutoresizingMaskIntoConstraints = false
         persistBar.translatesAutoresizingMaskIntoConstraints = false
 
-        window.contentView = stackView
-
-        NSLayoutConstraint.activate([
-            stackView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
-            stackView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-
-            separator.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            auditSeparator.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-
-            scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: 80),
-            scrollView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-
-            reasonLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            cwdLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            auditLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-            justificationResponseLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-
-            buttonBar.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -20),
-
-            persistBar.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 20),
-        ])
-
-        // Constrain justification label width if present
+        // Assemble left stack
+        leftStack.addArrangedSubview(ruleLabel)
+        leftStack.addArrangedSubview(riskLabel)
+        leftStack.addArrangedSubview(countdownLabel)
+        leftStack.addArrangedSubview(separator)
+        leftStack.addArrangedSubview(whyHeader)
+        leftStack.addArrangedSubview(reasonLabel)
         for view in justificationViews {
-            if view is NSTextField, view != justificationViews.first {
-                NSLayoutConstraint.activate([
-                    view.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -40),
-                ])
+            leftStack.addArrangedSubview(view)
+        }
+        leftStack.addArrangedSubview(cwdHeader)
+        leftStack.addArrangedSubview(cwdLabel)
+        leftStack.addArrangedSubview(auditSeparator)
+        leftStack.addArrangedSubview(auditHeader)
+        leftStack.addArrangedSubview(auditLabel)
+        leftStack.addArrangedSubview(auditDisclaimer)
+        leftStack.addArrangedSubview(whyButton)
+        leftStack.addArrangedSubview(justificationResponseLabel)
+        leftStack.addArrangedSubview(leftSpacer)
+        leftStack.addArrangedSubview(errorLabel)
+        leftStack.addArrangedSubview(persistBar)
+        leftStack.addArrangedSubview(buttonBar)
+
+        // ===== RIGHT PANEL: Syntax-highlighted command with line numbers =====
+
+        // Line number gutter
+        let lineNumberView = NSTextField(labelWithString: "")
+        lineNumberView.font = ShellSyntaxHighlighter.codeFont
+        lineNumberView.textColor = NSColor(calibratedWhite: 0.45, alpha: 1.0)
+        lineNumberView.backgroundColor = NSColor(calibratedRed: 0x1a/255.0, green: 0x1a/255.0, blue: 0x1a/255.0, alpha: 1.0)
+        lineNumberView.drawsBackground = true
+        lineNumberView.alignment = .right
+        lineNumberView.maximumNumberOfLines = 0
+        lineNumberView.lineBreakMode = .byClipping
+        self.lineNumberView = lineNumberView
+
+        // Build line number text
+        let lineNumbers = (1...max(lineCount, 1)).map { String($0) }.joined(separator: "\n")
+        lineNumberView.stringValue = lineNumbers
+
+        // Command text view with syntax highlighting
+        let commandTextView = NSTextView()
+        commandTextView.isEditable = false
+        commandTextView.isSelectable = true
+        commandTextView.backgroundColor = ShellSyntaxHighlighter.backgroundColor
+        commandTextView.textContainerInset = NSSize(width: 8, height: 8)
+        commandTextView.isAutomaticQuoteSubstitutionEnabled = false
+        commandTextView.isAutomaticTextReplacementEnabled = false
+        commandTextView.isAutomaticSpellingCorrectionEnabled = false
+        commandTextView.isRichText = false
+
+        // Apply syntax highlighting
+        let highlighted = ShellSyntaxHighlighter.highlight(commandText)
+        commandTextView.textStorage?.setAttributedString(highlighted)
+        self.commandTextView = commandTextView
+
+        let commandScrollView = NSScrollView()
+        commandScrollView.documentView = commandTextView
+        commandScrollView.hasVerticalScroller = true
+        commandScrollView.hasHorizontalScroller = true
+        commandScrollView.borderType = .noBorder
+        commandScrollView.drawsBackground = true
+        commandScrollView.backgroundColor = ShellSyntaxHighlighter.backgroundColor
+        commandScrollView.translatesAutoresizingMaskIntoConstraints = false
+        commandTextView.autoresizingMask = [.width]
+
+        // Line number scroll view
+        let lineNumberScrollView = NSScrollView()
+        lineNumberScrollView.documentView = lineNumberView
+        lineNumberScrollView.hasVerticalScroller = false
+        lineNumberScrollView.drawsBackground = true
+        lineNumberScrollView.backgroundColor = NSColor(calibratedRed: 0x1a/255.0, green: 0x1a/255.0, blue: 0x1a/255.0, alpha: 1.0)
+        lineNumberScrollView.borderType = .noBorder
+        lineNumberScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Code panel header
+        let codeHeader = NSTextField(labelWithString: "COMMAND:")
+        codeHeader.font = NSFont.boldSystemFont(ofSize: 13)
+        codeHeader.textColor = .white
+
+        let codeHeaderBar = NSView()
+        codeHeaderBar.translatesAutoresizingMaskIntoConstraints = false
+        codeHeaderBar.wantsLayer = true
+        codeHeaderBar.layer?.backgroundColor = NSColor(calibratedRed: 0x25/255.0, green: 0x25/255.0, blue: 0x25/255.0, alpha: 1.0).cgColor
+        codeHeader.translatesAutoresizingMaskIntoConstraints = false
+        codeHeaderBar.addSubview(codeHeader)
+
+        // Code area: line numbers + code
+        let codeArea = NSView()
+        codeArea.translatesAutoresizingMaskIntoConstraints = false
+
+        codeArea.addSubview(lineNumberScrollView)
+        codeArea.addSubview(commandScrollView)
+
+        // Right panel container
+        let rightPanel = NSView()
+        rightPanel.translatesAutoresizingMaskIntoConstraints = false
+        rightPanel.wantsLayer = true
+        rightPanel.layer?.backgroundColor = ShellSyntaxHighlighter.backgroundColor.cgColor
+        rightPanel.addSubview(codeHeaderBar)
+        rightPanel.addSubview(codeArea)
+
+        // ===== LAYOUT =====
+
+        if useSideBySide {
+            // Side-by-side with NSSplitView
+            let splitView = NSSplitView()
+            splitView.isVertical = true
+            splitView.dividerStyle = .thin
+            splitView.translatesAutoresizingMaskIntoConstraints = false
+
+            // Wrap left stack in a scroll view for when content overflows
+            let leftScrollView = NSScrollView()
+            let leftFlipped = FlippedClipView()
+            leftScrollView.contentView = leftFlipped
+            leftScrollView.documentView = leftStack
+            leftScrollView.hasVerticalScroller = true
+            leftScrollView.drawsBackground = false
+            leftScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+            splitView.addArrangedSubview(leftScrollView)
+            splitView.addArrangedSubview(rightPanel)
+
+            window.contentView = splitView
+
+            // Left panel min width
+            splitView.setHoldingPriority(.defaultLow + 1, forSubviewAt: 0)
+            splitView.setHoldingPriority(.defaultLow, forSubviewAt: 1)
+
+            NSLayoutConstraint.activate([
+                splitView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+                splitView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
+                splitView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+                splitView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+
+                leftScrollView.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),
+                rightPanel.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+
+                leftStack.widthAnchor.constraint(equalTo: leftScrollView.widthAnchor),
+            ])
+
+            // Width constraints for left panel content
+            let leftContentWidth = leftScrollView.widthAnchor
+            NSLayoutConstraint.activate([
+                separator.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                auditSeparator.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                reasonLabel.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                cwdLabel.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                auditLabel.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                justificationResponseLabel.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+            ])
+
+            for view in justificationViews {
+                if view is NSTextField, view != justificationViews.first {
+                    NSLayoutConstraint.activate([
+                        view.widthAnchor.constraint(equalTo: leftContentWidth, constant: -32),
+                    ])
+                }
             }
+        } else {
+            // Single-column layout for short commands — command shown inline
+            let commandHeader = NSTextField(labelWithString: "COMMAND:")
+            commandHeader.font = NSFont.boldSystemFont(ofSize: 13)
+
+            // Insert command section into left stack before cwdHeader
+            // Remove cwdHeader and cwdLabel, re-add after command
+            // Actually, re-order: add command before working directory
+            // We need to rebuild the stack for single-column with inline command
+            let singleStack = NSStackView()
+            singleStack.orientation = .vertical
+            singleStack.alignment = .leading
+            singleStack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+            singleStack.spacing = 8
+            singleStack.translatesAutoresizingMaskIntoConstraints = false
+
+            // Inline command scroll (smaller)
+            let inlineCodeArea = NSView()
+            inlineCodeArea.translatesAutoresizingMaskIntoConstraints = false
+            inlineCodeArea.addSubview(lineNumberScrollView)
+            inlineCodeArea.addSubview(commandScrollView)
+
+            let inlineScrollContainer = NSView()
+            inlineScrollContainer.translatesAutoresizingMaskIntoConstraints = false
+            inlineScrollContainer.wantsLayer = true
+            inlineScrollContainer.layer?.backgroundColor = ShellSyntaxHighlighter.backgroundColor.cgColor
+            inlineScrollContainer.layer?.cornerRadius = 4
+            inlineScrollContainer.addSubview(inlineCodeArea)
+
+            singleStack.addArrangedSubview(ruleLabel)
+            singleStack.addArrangedSubview(riskLabel)
+            singleStack.addArrangedSubview(countdownLabel)
+            singleStack.addArrangedSubview(separator)
+            singleStack.addArrangedSubview(whyHeader)
+            singleStack.addArrangedSubview(reasonLabel)
+            for view in justificationViews {
+                singleStack.addArrangedSubview(view)
+            }
+            singleStack.addArrangedSubview(commandHeader)
+            singleStack.addArrangedSubview(inlineScrollContainer)
+            singleStack.addArrangedSubview(cwdHeader)
+            singleStack.addArrangedSubview(cwdLabel)
+            singleStack.addArrangedSubview(auditSeparator)
+            singleStack.addArrangedSubview(auditHeader)
+            singleStack.addArrangedSubview(auditLabel)
+            singleStack.addArrangedSubview(auditDisclaimer)
+            singleStack.addArrangedSubview(whyButton)
+            singleStack.addArrangedSubview(justificationResponseLabel)
+            singleStack.addArrangedSubview(leftSpacer)
+            singleStack.addArrangedSubview(errorLabel)
+            singleStack.addArrangedSubview(persistBar)
+            singleStack.addArrangedSubview(buttonBar)
+
+            window.contentView = singleStack
+
+            NSLayoutConstraint.activate([
+                singleStack.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+                singleStack.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
+                singleStack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+                singleStack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+
+                separator.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                auditSeparator.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                reasonLabel.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                cwdLabel.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                auditLabel.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                justificationResponseLabel.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+
+                inlineScrollContainer.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                inlineScrollContainer.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+                inlineScrollContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
+
+                inlineCodeArea.topAnchor.constraint(equalTo: inlineScrollContainer.topAnchor),
+                inlineCodeArea.bottomAnchor.constraint(equalTo: inlineScrollContainer.bottomAnchor),
+                inlineCodeArea.leadingAnchor.constraint(equalTo: inlineScrollContainer.leadingAnchor),
+                inlineCodeArea.trailingAnchor.constraint(equalTo: inlineScrollContainer.trailingAnchor),
+            ])
+
+            // Inline code area internal layout
+            NSLayoutConstraint.activate([
+                lineNumberScrollView.topAnchor.constraint(equalTo: inlineCodeArea.topAnchor),
+                lineNumberScrollView.bottomAnchor.constraint(equalTo: inlineCodeArea.bottomAnchor),
+                lineNumberScrollView.leadingAnchor.constraint(equalTo: inlineCodeArea.leadingAnchor),
+                lineNumberScrollView.widthAnchor.constraint(equalToConstant: lineNumberGutterWidth(lineCount: lineCount)),
+
+                commandScrollView.topAnchor.constraint(equalTo: inlineCodeArea.topAnchor),
+                commandScrollView.bottomAnchor.constraint(equalTo: inlineCodeArea.bottomAnchor),
+                commandScrollView.leadingAnchor.constraint(equalTo: lineNumberScrollView.trailingAnchor),
+                commandScrollView.trailingAnchor.constraint(equalTo: inlineCodeArea.trailingAnchor),
+            ])
+
+            for view in justificationViews {
+                if view is NSTextField, view != justificationViews.first {
+                    NSLayoutConstraint.activate([
+                        view.widthAnchor.constraint(equalTo: singleStack.widthAnchor, constant: -32),
+                    ])
+                }
+            }
+        }
+
+        // Right panel internal layout (for side-by-side mode)
+        if useSideBySide {
+            NSLayoutConstraint.activate([
+                codeHeaderBar.topAnchor.constraint(equalTo: rightPanel.topAnchor),
+                codeHeaderBar.leadingAnchor.constraint(equalTo: rightPanel.leadingAnchor),
+                codeHeaderBar.trailingAnchor.constraint(equalTo: rightPanel.trailingAnchor),
+                codeHeaderBar.heightAnchor.constraint(equalToConstant: 32),
+
+                codeHeader.centerYAnchor.constraint(equalTo: codeHeaderBar.centerYAnchor),
+                codeHeader.leadingAnchor.constraint(equalTo: codeHeaderBar.leadingAnchor, constant: 12),
+
+                codeArea.topAnchor.constraint(equalTo: codeHeaderBar.bottomAnchor),
+                codeArea.leadingAnchor.constraint(equalTo: rightPanel.leadingAnchor),
+                codeArea.trailingAnchor.constraint(equalTo: rightPanel.trailingAnchor),
+                codeArea.bottomAnchor.constraint(equalTo: rightPanel.bottomAnchor),
+
+                lineNumberScrollView.topAnchor.constraint(equalTo: codeArea.topAnchor),
+                lineNumberScrollView.bottomAnchor.constraint(equalTo: codeArea.bottomAnchor),
+                lineNumberScrollView.leadingAnchor.constraint(equalTo: codeArea.leadingAnchor),
+                lineNumberScrollView.widthAnchor.constraint(equalToConstant: lineNumberGutterWidth(lineCount: lineCount)),
+
+                commandScrollView.topAnchor.constraint(equalTo: codeArea.topAnchor),
+                commandScrollView.bottomAnchor.constraint(equalTo: codeArea.bottomAnchor),
+                commandScrollView.leadingAnchor.constraint(equalTo: lineNumberScrollView.trailingAnchor),
+                commandScrollView.trailingAnchor.constraint(equalTo: codeArea.trailingAnchor),
+            ])
         }
 
         super.init()
@@ -272,6 +513,12 @@ class GateWindow: NSObject, NSWindowDelegate {
         alwaysDenyButton.action = #selector(alwaysDenyClicked)
         whyButton.target = self
         whyButton.action = #selector(whyClicked)
+    }
+
+    /// Calculate gutter width based on number of lines
+    private static func gutterWidth(for lineCount: Int) -> CGFloat {
+        let digits = max(String(lineCount).count, 2)
+        return CGFloat(digits) * 8.5 + 16 // character width + padding
     }
 
     func show() {
@@ -401,4 +648,17 @@ class GateWindow: NSObject, NSWindowDelegate {
             onCancel?()
         }
     }
+}
+
+// MARK: - Helpers
+
+/// Compute gutter width for line numbers
+private func lineNumberGutterWidth(lineCount: Int) -> CGFloat {
+    let digits = max(String(lineCount).count, 2)
+    return CGFloat(digits) * 8.5 + 16
+}
+
+/// A flipped clip view so NSStackView content starts from top in scroll views.
+class FlippedClipView: NSClipView {
+    override var isFlipped: Bool { true }
 }
