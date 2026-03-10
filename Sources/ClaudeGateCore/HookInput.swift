@@ -40,6 +40,91 @@ public struct HookInput: Codable {
         }
         return ""
     }
+
+    /// Whether this is an MCP (Model Context Protocol) tool call
+    public var isMCPTool: Bool {
+        toolName.hasPrefix("mcp__")
+    }
+
+    /// The MCP namespace (e.g., "obsidian" from "mcp__obsidian__write_note")
+    public var mcpNamespace: String? {
+        guard isMCPTool else { return nil }
+        // mcp__obsidian__write_note → ["mcp", "obsidian", "write_note"]
+        let segments = toolName.components(separatedBy: "__")
+        guard segments.count >= 2 else { return nil }
+        return segments[1]
+    }
+
+    /// The MCP action (e.g., "write_note" from "mcp__obsidian__write_note")
+    public var mcpAction: String? {
+        guard isMCPTool else { return nil }
+        let segments = toolName.components(separatedBy: "__")
+        guard segments.count >= 3 else { return nil }
+        return segments[2...].joined(separator: "__")
+    }
+
+    /// Agent tool prompt (for Agent tool dispatches)
+    public var agentPrompt: String? {
+        toolInput["prompt"]?.stringValue
+    }
+
+    /// Agent tool subagent type
+    public var agentType: String? {
+        toolInput["subagent_type"]?.stringValue
+    }
+
+    /// Human-readable display summary for gate windows.
+    /// Provides meaningful context instead of raw JSON for MCP/Agent tools.
+    public var displaySummary: String {
+        // Bash: show command
+        if let cmd = command {
+            return cmd
+        }
+        // Write/Edit: show file path
+        if let path = filePath {
+            return "\(toolName): \(path)"
+        }
+        // Agent tool: show type and prompt snippet
+        if toolName == "Agent" {
+            let type = agentType ?? "general"
+            if let prompt = agentPrompt {
+                let short = prompt.count > 120 ? String(prompt.prefix(117)) + "..." : prompt
+                return "Agent (\(type)): \(short)"
+            }
+            return "Agent (\(type))"
+        }
+        // MCP tools: show namespace/action and key fields
+        if isMCPTool {
+            let namespace = mcpNamespace ?? "unknown"
+            let action = mcpAction ?? toolName
+            let keyFields = extractMCPKeyFields()
+            if !keyFields.isEmpty {
+                return "\(namespace)/\(action): \(keyFields)"
+            }
+            return "\(namespace)/\(action)"
+        }
+        // Fallback: tool name + truncated JSON
+        let json = toolInputAsString
+        if json.count > 150 {
+            return "\(toolName): \(String(json.prefix(147)))..."
+        }
+        return json.isEmpty ? toolName : "\(toolName): \(json)"
+    }
+
+    /// Extract the most useful fields from MCP tool input for display
+    private func extractMCPKeyFields() -> String {
+        // Common MCP field names that carry meaningful content
+        let keyNames = ["path", "url", "query", "note", "title", "name",
+                        "content", "filename", "selector", "text", "message"]
+        var parts: [String] = []
+        for key in keyNames {
+            if let val = toolInput[key]?.stringValue, !val.isEmpty {
+                let short = val.count > 80 ? String(val.prefix(77)) + "..." : val
+                parts.append("\(key)=\(short)")
+            }
+        }
+        return parts.joined(separator: ", ")
+    }
 }
 
 /// Type-erased Codable wrapper for JSON values

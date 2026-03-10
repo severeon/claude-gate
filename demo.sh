@@ -101,6 +101,58 @@ SCENARIOS[deploy]='{
   "tool_description": "Applying infrastructure changes"
 }'
 
+# ── MCP / Agent tool scenarios ────────────────────────────
+
+SCENARIOS[mcp-obsidian-write]='{
+  "tool_name": "mcp__obsidian__write_note",
+  "tool_input": {"path": "daily/2026-03-09.md", "content": "# Daily Note\nTasks for today...", "title": "Daily Note"}
+}'
+
+SCENARIOS[mcp-obsidian-delete]='{
+  "tool_name": "mcp__obsidian__delete_note",
+  "tool_input": {"path": "archive/old-note.md"}
+}'
+
+SCENARIOS[mcp-obsidian-read]='{
+  "tool_name": "mcp__obsidian__read_note",
+  "tool_input": {"path": "projects/claude-gate.md"}
+}'
+
+SCENARIOS[mcp-browser-navigate]='{
+  "tool_name": "mcp__claude-in-chrome__navigate",
+  "tool_input": {"url": "https://example.com/admin/settings"}
+}'
+
+SCENARIOS[mcp-browser-js]='{
+  "tool_name": "mcp__claude-in-chrome__javascript_tool",
+  "tool_input": {"code": "document.querySelectorAll(\"input[type=password]\").forEach(el => console.log(el.value))"}
+}'
+
+SCENARIOS[mcp-slack-send]='{
+  "tool_name": "mcp__slack__send_message",
+  "tool_input": {"channel": "#general", "message": "Deployment complete!"}
+}'
+
+SCENARIOS[mcp-filesystem-write]='{
+  "tool_name": "mcp__filesystem__write_file",
+  "tool_input": {"path": "/etc/hosts", "content": "127.0.0.1 evil.com"}
+}'
+
+SCENARIOS[agent-background]='{
+  "tool_name": "Agent",
+  "tool_input": {"prompt": "Delete all test files and rebuild from scratch", "subagent_type": "general-purpose", "run_in_background": true}
+}'
+
+SCENARIOS[agent-foreground]='{
+  "tool_name": "Agent",
+  "tool_input": {"prompt": "Search for TODO comments in the codebase", "subagent_type": "Explore"}
+}'
+
+SCENARIOS[mcp-github-create-pr]='{
+  "tool_name": "mcp__github__create_pull_request",
+  "tool_input": {"repo": "user/project", "title": "feat: add new feature", "head": "feature-branch", "base": "main"}
+}'
+
 # ── Functions ─────────────────────────────────────────────
 
 list_scenarios() {

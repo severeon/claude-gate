@@ -467,3 +467,67 @@ path_pattern = '(^|/)Makefile$'
 action = "gate"
 reason = "Modifying a Makefile changes build automation commands."
 risk = "low"
+
+# ============================================================================
+# GATED: MCP (Model Context Protocol) tools — agent sub-tool calls
+# ============================================================================
+# Tool names use glob patterns: mcp__<namespace>__* matches all tools
+# in a namespace. Exact names like mcp__obsidian__write_note also work.
+
+[[rules]]
+name = "Gate: browser automation tools"
+tool = "mcp__claude-in-chrome__*"
+action = "gate"
+reason = "Browser automation can navigate to URLs, execute JavaScript, and interact with web pages."
+risk = "high"
+
+[[rules]]
+name = "Gate: Obsidian write/delete"
+tool = "mcp__obsidian__*"
+pattern = '(write_note|delete_note|patch_note|move_note|move_file|update_frontmatter|manage_tags)'
+action = "gate"
+reason = "Writing or deleting notes modifies your Obsidian vault."
+risk = "medium"
+
+[[rules]]
+name = "Gate: filesystem MCP write operations"
+tool = "mcp__filesystem__*"
+pattern = '(write|delete|move|rename|create)'
+action = "gate"
+reason = "Filesystem MCP tools can modify files outside the project directory."
+risk = "high"
+
+[[rules]]
+name = "Gate: Slack messaging"
+tool = "mcp__slack__*"
+pattern = '(send|post|message|create|delete|update)'
+action = "gate"
+reason = "Sending messages via Slack is visible to others and hard to retract."
+risk = "high"
+
+[[rules]]
+name = "Gate: GitHub/Gitea API mutations"
+tool = "mcp__github__*"
+pattern = '(create|delete|update|merge|close|comment)'
+action = "gate"
+reason = "GitHub API mutations affect shared repositories and are visible to collaborators."
+risk = "medium"
+
+[[rules]]
+name = "Gate: database MCP tools"
+tool = "mcp__database__*"
+action = "gate"
+reason = "Database MCP tools can read or modify database contents."
+risk = "high"
+
+# ============================================================================
+# GATED: Agent tool — sub-agent dispatch
+# ============================================================================
+
+[[rules]]
+name = "Gate: agent with background execution"
+tool = "Agent"
+pattern = '"run_in_background"\s*:\s*true'
+action = "gate"
+reason = "Background agents run autonomously without direct oversight."
+risk = "medium"

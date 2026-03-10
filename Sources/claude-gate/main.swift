@@ -65,14 +65,7 @@ case .gate:
     }
 
     // Determine the command/content text to display
-    let displayText: String
-    if let cmd = input.command {
-        displayText = cmd
-    } else if let path = input.filePath {
-        displayText = "\(input.toolName): \(path)"
-    } else {
-        displayText = input.toolInputAsString
-    }
+    let displayText = input.displaySummary
 
     let cwd = input.cwd ?? FileManager.default.currentDirectoryPath
 

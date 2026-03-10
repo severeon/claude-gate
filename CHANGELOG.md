@@ -4,15 +4,21 @@ All notable changes to claude-gate are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Wildcard tool matching**: Rules can now use glob patterns in the `tool` field (e.g., `mcp__obsidian__*`, `mcp__*`) to match entire MCP namespaces instead of requiring exact tool names. (#17)
+- **MCP display summaries**: Gate windows show human-readable summaries for MCP and Agent tools (namespace/action with key fields) instead of raw JSON dumps. (#17)
+- **Default MCP/Agent rules**: Added gating rules for browser automation (`mcp__claude-in-chrome__*`), Obsidian write/delete, filesystem MCP, Slack messaging, GitHub API mutations, database MCP, and background Agent dispatch. (#17)
+- **MCP demo scenarios**: 11 new demo scenarios for MCP tools (Obsidian read/write/delete, browser navigation/JS, Slack send, filesystem write, GitHub PR, Agent background/foreground). (#17)
+- **MCP input helpers**: `HookInput` now exposes `isMCPTool`, `mcpNamespace`, `mcpAction`, `agentPrompt`, `agentType`, and `displaySummary` properties.
+- **API key setup docs**: README now includes a dedicated section on configuring the Anthropic API key for the "Why?" justification and security audit features. (#16)
+
 ### Changed
 - **Gate window visual refresh**: Modern layout with improved visual hierarchy — rule name + risk badge in title row, section backgrounds with rounded corners, color-coded styled buttons (green approve, red deny, blue info) with hover effects, uppercase pill-style risk badge, better typography weight progression (semibold title > semibold section headers > regular body > monospaced code), improved spacing and custom section gaps. All custom colors adapt to both light and dark mode. (#15)
+- **Pattern matching for MCP tools**: The default rule matching case now checks patterns against both the tool name and input JSON, so patterns like `write_note|delete_note` correctly match MCP action names embedded in tool names. (#17)
 
 ### Improved
 - **API key error messages**: "Unavailable" messages in the gate window now show both `CLAUDE_GATE_API_KEY` and `ANTHROPIC_API_KEY` env var names so users know exactly what to set. (#16)
 - **API error logging**: Justification and security audit API failures now log details to stderr for easier debugging (e.g., invalid key, network errors). (#16)
-
-### Added
-- **API key setup docs**: README now includes a dedicated section on configuring the Anthropic API key for the "Why?" justification and security audit features. (#16)
 
 ## [v0.8.0] - 2026-03-09
 
