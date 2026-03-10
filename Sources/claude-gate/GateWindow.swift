@@ -341,14 +341,14 @@ class GateWindow: NSObject, NSWindowDelegate {
     /// Show that justification is unavailable
     func showJustificationUnavailable() {
         whyButton.isHidden = true
-        justificationResponseLabel.stringValue = "Justification unavailable (no ANTHROPIC_API_KEY)"
+        justificationResponseLabel.stringValue = "Justification unavailable (set CLAUDE_GATE_API_KEY or ANTHROPIC_API_KEY)"
         justificationResponseLabel.textColor = .tertiaryLabelColor
         justificationResponseLabel.isHidden = false
     }
 
     /// Show that the audit is unavailable (no API key)
     func showAuditUnavailable() {
-        auditHeader.stringValue = "SECURITY AUDIT: unavailable (no ANTHROPIC_API_KEY)"
+        auditHeader.stringValue = "SECURITY AUDIT: unavailable (set CLAUDE_GATE_API_KEY or ANTHROPIC_API_KEY)"
         auditHeader.textColor = .tertiaryLabelColor
     }
 
