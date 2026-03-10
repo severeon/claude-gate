@@ -5,6 +5,11 @@ All notable changes to claude-gate are documented here.
 ## [Unreleased]
 
 ### Added
+- **Side-by-side layout**: Gate window uses a resizable split view for long commands — left panel shows rule info, risk level, reason, and justification; right panel shows the full command with syntax highlighting. Short commands (≤3 lines, ≤60 chars) use a compact single-column layout. (#8)
+- **Shell syntax highlighting**: Command text is syntax-highlighted with a VS Code-inspired dark theme — keywords, strings, comments, variables, numbers, flags, and operators each get distinct colors. (#8)
+- **Dangerous pattern emphasis**: Commands containing dangerous patterns (rm, sudo, --force, --hard, etc.) are highlighted in red with a subtle red background. (#8)
+- **Line numbers**: Code panel includes a line number gutter for easy reference. (#8)
+- **Auto-sizing window**: Window width and height scale to content within min/max bounds (520–1100 × 420–800). Window is now resizable. (#8)
 - **Wildcard tool matching**: Rules can now use glob patterns in the `tool` field (e.g., `mcp__obsidian__*`, `mcp__*`) to match entire MCP namespaces instead of requiring exact tool names. (#17)
 - **MCP display summaries**: Gate windows show human-readable summaries for MCP and Agent tools (namespace/action with key fields) instead of raw JSON dumps. (#17)
 - **Default MCP/Agent rules**: Added gating rules for browser automation (`mcp__claude-in-chrome__*`), Obsidian write/delete, filesystem MCP, Slack messaging, GitHub API mutations, database MCP, and background Agent dispatch. (#17)
